@@ -24,6 +24,8 @@ class ConveyorSimulator:
         
         # Load chip templates
         self.chip_templates = self.load_chip_templates()
+        self.reference_templates = self.chip_templates.copy()  # Store clean references
+        self.fake_threshold = 0.05  # 5% difference threshold
         
         # Active chips on belt
         self.chips = []
@@ -74,6 +76,89 @@ class ConveyorSimulator:
         b, g, r = cv2.split(img)
         return cv2.merge([b, g, r, mask])
     
+    def calculate_image_difference(self, img1, img2):
+        """
+        Calculate percentage difference between two images.
+        Returns value between 0.0 (identical) and 1.0 (completely different)
+        """
+        # Ensure same size
+        if img1.shape != img2.shape:
+            img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
+        
+        # Convert to grayscale if needed (ignore alpha channel)
+        if len(img1.shape) == 3 and img1.shape[2] == 4:
+            img1_gray = cv2.cvtColor(img1[:, :, :3], cv2.COLOR_BGR2GRAY)
+        else:
+            img1_gray = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
+            
+        if len(img2.shape) == 3 and img2.shape[2] == 4:
+            img2_gray = cv2.cvtColor(img2[:, :, :3], cv2.COLOR_BGR2GRAY)
+        else:
+            img2_gray = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+        
+        # Calculate absolute difference
+        diff = cv2.absdiff(img1_gray, img2_gray)
+        
+        # Calculate percentage of different pixels
+        non_zero = np.count_nonzero(diff > 10)  # Threshold to ignore minor variations
+        total_pixels = diff.size
+        difference_percent = non_zero / total_pixels
+        
+        return difference_percent
+    
+    def apply_fake_alterations(self, template, chip_type):
+        """
+        Apply random alterations to template to create a fake chip.
+        Returns altered template and whether it's fake based on 5% threshold.
+        """
+        altered = template.copy()
+        
+        # Randomly decide to alter (30% chance of creating a fake)
+        if random.random() > 0.3:
+            return altered, False  # Not altered, authentic
+        
+        # Apply various alterations
+        alteration_type = random.choice(['noise', 'blur', 'color', 'rotate', 'crop'])
+        
+        if alteration_type == 'noise':
+            # Add noise
+            noise = np.random.randint(-30, 30, altered.shape, dtype=np.int16)
+            altered = np.clip(altered.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+        
+        elif alteration_type == 'blur':
+            # Add blur
+            altered[:, :, :3] = cv2.GaussianBlur(altered[:, :, :3], (15, 15), 0)
+        
+        elif alteration_type == 'color':
+            # Change color slightly
+            hsv = cv2.cvtColor(altered[:, :, :3], cv2.COLOR_BGR2HSV)
+            hsv[:, :, 0] = (hsv[:, :, 0] + random.randint(10, 30)) % 180  # Hue shift
+            altered[:, :, :3] = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+        
+        elif alteration_type == 'rotate':
+            # Rotate slightly
+            h, w = altered.shape[:2]
+            center = (w // 2, h // 2)
+            angle = random.uniform(-15, 15)
+            M = cv2.getRotationMatrix2D(center, angle, 1.0)
+            altered = cv2.warpAffine(altered, M, (w, h), borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
+        
+        elif alteration_type == 'crop':
+            # Add black patches
+            h, w = altered.shape[:2]
+            for _ in range(random.randint(2, 5)):
+                x1 = random.randint(0, w - 20)
+                y1 = random.randint(0, h - 20)
+                x2 = x1 + random.randint(10, 30)
+                y2 = y1 + random.randint(10, 30)
+                altered[y1:y2, x1:x2] = 0
+        
+        # Check if alteration exceeds 5% threshold
+        diff = self.calculate_image_difference(template, altered)
+        is_fake = diff > self.fake_threshold
+        
+        return altered, is_fake
+    
     def create_green_conveyor_background(self):
         """Create green conveyor belt background"""
         background = np.ones((self.height, self.width, 3), dtype=np.uint8) * 50
@@ -97,16 +182,19 @@ class ConveyorSimulator:
         return background
     
     def spawn_chip(self):
-        """Spawn a new chip"""
+        """Spawn a new chip with fake detection based on 5% difference threshold"""
         chip_type = random.choices(['GOLD', 'SILVER', 'BRONZE'], weights=[0.15, 0.35, 0.50])[0]
         
         if chip_type not in self.chip_templates:
             return
         
-        template = self.chip_templates[chip_type]
-        h, w = template.shape[:2]
-        is_fake = random.random() < 0.2
+        # Get reference template and apply potential alterations
+        reference_template = self.reference_templates[chip_type]
+        altered_template, is_fake = self.apply_fake_alterations(reference_template, chip_type)
         
+        h, w = altered_template.shape[:2]
+        
+        # Calculate value based on authenticity
         if is_fake:
             value = 0
             authentic = False
@@ -125,16 +213,21 @@ class ConveyorSimulator:
         x = random.randint(self.belt_x + 10, self.belt_x + self.belt_width - w - 10)
         y = -h - 10
         
+        # Calculate actual difference percentage for display
+        diff_percent = self.calculate_image_difference(reference_template, altered_template)
+        
         chip = {
             'id': self.next_chip_id, 'type': chip_type, 'x': x, 'y': y,
-            'width': w, 'height': h, 'template': template,
+            'width': w, 'height': h, 'template': altered_template,
             'value': value, 'authentic': authentic,
-            'velocity_y': self.conveyor_speed, 'counted': False
+            'velocity_y': self.conveyor_speed, 'counted': False,
+            'difference': diff_percent  # Store difference for display
         }
         
         self.chips.append(chip)
         self.next_chip_id += 1
-        print(f"✨ Spawned {chip_type} #{chip['id']} - {'REAL' if authentic else 'FAKE'} - {value} CR")
+        fake_status = 'FAKE' if is_fake else 'REAL'
+        print(f"✨ Spawned {chip_type} #{chip['id']} - {fake_status} - {value} CR (Diff: {diff_percent*100:.1f}%)")
     
     def update_chips(self):
         """Update chip positions"""
@@ -220,7 +313,11 @@ class ConveyorSimulator:
             if y > -20:
                 cv2.putText(frame, f"{chip['type']} #{chip['id']}", (x, max(15, y - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
                 cv2.putText(frame, f"{chip['value']} CR", (x, y + chip['height'] + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-                cv2.putText(frame, "REAL" if chip['authentic'] else "FAKE", (x, y + chip['height'] + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+                
+                # Show difference percentage and status
+                diff_pct = chip.get('difference', 0) * 100
+                status_text = f"FAKE ({diff_pct:.1f}%)" if not chip['authentic'] else f"REAL ({diff_pct:.1f}%)"
+                cv2.putText(frame, status_text, (x, y + chip['height'] + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
         
         self.draw_ui(frame)
         return frame
