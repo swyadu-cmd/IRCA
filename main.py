@@ -364,13 +364,25 @@ class ConveyorSimulator:
 
 
 if __name__ == "__main__":
-    print("="*60)
-    print("🎬 CHIP CONVEYOR SIMULATOR")
-    print("="*60)
-    print("\nValue Calculation Rules:")
-    print("  GOLD:   3 digits × 10  (e.g., 752 → 7520 CR)")
-    print("  SILVER: 3 digits       (e.g., 756 → 756 CR)")
-    print("  BRONZE: 2 digits × ×   (e.g., 2×4 → 8 CR)")
-    print("="*60 + "\n")
+    import argparse
     
-    ConveyorSimulator(width=1280, height=720, conveyor_speed=3).run()
+    parser = argparse.ArgumentParser(description='Chip Authenticator')
+    parser.add_argument('--camera', action='store_true', help='Use camera mode')
+    args = parser.parse_args()
+    
+    if args.camera:
+        # Launch camera mode
+        import camera_main
+        camera_main.main()
+    else:
+        # Launch simulation mode
+        print("="*60)
+        print("🎬 CHIP CONVEYOR SIMULATOR")
+        print("="*60)
+        print("\nValue Calculation Rules:")
+        print("  GOLD:   3 digits × 10  (e.g., 752 → 7520 CR)")
+        print("  SILVER: 3 digits       (e.g., 756 → 756 CR)")
+        print("  BRONZE: 2 digits × ×   (e.g., 2×4 → 8 CR)")
+        print("="*60 + "\n")
+        
+        ConveyorSimulator(width=1280, height=720, conveyor_speed=3).run()

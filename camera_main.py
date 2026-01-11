@@ -213,11 +213,9 @@ class CameraChipSystem:
         if CAMERA_AVAILABLE:
             print(f"[1/4] Connecting to {camera_type}...")
             self.camera = CameraManager(
-                camera_type=camera_type,
-                webcam_index=webcam_index,
+                camera_index=webcam_index,
                 width=1280,
-                height=720,
-                fps=30
+                height=720
             )
         else:
             print("[1/4] Camera unavailable - using demo mode")
@@ -284,7 +282,7 @@ class CameraChipSystem:
             
             # Show live preview
             while True:
-                success, frame = self.camera.read_frame()
+                success, frame = self.camera.read()
                 if not success:
                     continue
                 
@@ -414,7 +412,7 @@ class CameraChipSystem:
             
             # Capture frame
             if self.camera:
-                success, frame = self.camera.read_frame()
+                success, frame = self.camera.read()
                 if not success or frame is None:
                     print("❌ Failed to capture frame")
                     break
