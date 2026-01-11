@@ -8,17 +8,22 @@ python launcher.py
 ```
 Select: 1=Simulator, 2=Camera, 3=Game
 
-### 🎬 Simulator Mode
+### 🎬 Simulator Mode (Default)
 ```bash
 python main.py
 ```
 Conveyor belt with automatic chip spawning
 
-### 📸 Camera Mode
+### 📸 Camera Mode (NEW!)
 ```bash
-python camera_main.py
+python main.py --camera
 ```
-Real camera with calibration
+Real camera with chip detection and calibration
+- Supports **Webcam** (standard OpenCV)
+- Supports **Basler** industrial cameras (requires pypylon)
+- Interactive calibration for each chip type
+
+**Alternative:** Direct launch with `python camera_main.py`
 
 ### 🎮 Interactive Game
 ```bash
@@ -42,8 +47,11 @@ Manual chip spawning and testing
 - **C** - Clear all | **P** - Pause/Resume
 - **R** - Reset stats | **Q** - Quit
 
-### Camera (`camera_main.py`)
-- **SPACE** - Capture/Pause | **R** - Reset
+### Camera (`main.py --camera`)
+- **Camera Selection** - Choose Webcam (1) or Basler (2)
+- **Calibration** - Place each chip type in center, press SPACE to capture
+- **SPACE** - Pause/Resume detection
+- **R** - Reset statistics
 - **Q** - Quit
 
 ### Game (`game.py`)
@@ -53,11 +61,29 @@ Manual chip spawning and testing
 
 ## Requirements
 
+### Basic (Simulator & Game)
 - Python 3.8+
-- OpenCV
+- OpenCV (`opencv-python`)
 - NumPy
 
-Install: `pip install -r requirements.txt`
+```bash
+pip install -r requirements.txt
+```
+
+### Camera Mode - Webcam
+- Same as basic requirements
+- Any USB/built-in webcam
+
+### Camera Mode - Basler (Optional)
+- All basic requirements
+- Basler camera hardware
+- Pypylon SDK
+
+```bash
+pip install pypylon
+```
+
+📖 **See [BASLER_CAMERA_SETUP.md](BASLER_CAMERA_SETUP.md) for detailed camera setup**
 
 ---
 
