@@ -13,9 +13,31 @@
 1. [Executive Summary](#executive-summary)
 2. [System Overview](#system-overview)
 3. [Architecture Design](#architecture-design)
+   - 3.1 [UML Class Diagrams](#31-uml-class-diagrams)
+     - Overall System Class Diagram
+     - Simulator Module Class Diagram
+     - Camera Module Class Diagram
+     - Sequence Diagram - Chip Detection Process
+     - State Diagram - System Operation
+   - 3.2 [Module Structure](#32-module-structure)
 4. [Core Components](#core-components)
 5. [Operating Modes](#operating-modes)
 6. [Algorithms & Techniques](#algorithms--techniques)
+   - 6.1 [Computer Vision Algorithms](#61-computer-vision-algorithms)
+   - 6.2 [Image Compositing](#62-image-compositing)
+   - 6.3 [Digital Image Processing Principles](#63-digital-image-processing-principles)
+     - Image Representation & Color Spaces
+     - Image Preprocessing Pipeline
+     - Color-Based Segmentation
+     - Morphological Operations
+     - Contour Detection & Analysis
+     - Chip Type Classification
+     - Value Calculation Algorithms
+     - Alpha Blending & Compositing
+     - Statistical Tracking
+     - Performance Metrics
+     - Complete Detection Pipeline Flowchart
+     - Data Flow Diagram
 7. [Value Calculation System](#value-calculation-system)
 8. [User Interface & Controls](#user-interface--controls)
 9. [Technical Implementation](#technical-implementation)
@@ -93,9 +115,245 @@ Simulator Filter      Contours     Area/Shape     Bronze Rules      Overlay
 
 ## 3. Architecture Design
 
-### 3.1 Module Structure
+### 3.1 UML Class Diagrams
 
-#### 3.1.1 Launcher Module (`launcher.py`)
+#### 3.1.1 Overall System Class Diagram
+
+```
++---------------------------------------------------------------+
+|                      <<launcher>>                             |
+|                     launcher.py                               |
++---------------------------------------------------------------+
+| + print_banner() : void                                       |
+| + run_simulator() : void                                      |
+| + run_camera() : void                                         |
+| + run_game() : void                                           |
+| + main() : void                                               |
++---------------------------------------------------------------+
+               |                |              |
+               | launches       | launches     | launches
+               v                v              v
+    +------------------+  +-----------------+  +---------------+
+    |ConveyorSimulator |  |CameraChipSystem |  |   ChipGame    |
+    +------------------+  +-----------------+  +---------------+
+```
+
+#### 3.1.2 Simulator Module Class Diagram
+
+```
++--------------------------------------------------------------------+
+|                       ConveyorSimulator                            |
++--------------------------------------------------------------------+
+| - width: int                                                       |
+| - height: int                                                      |
+| - conveyor_speed: int                                              |
+| - belt_width: int                                                  |
+| - belt_x: int                                                      |
+| - chip_templates: Dict[str, np.ndarray]                            |
+| - reference_templates: Dict[str, np.ndarray]                       |
+| - fake_threshold: float                                            |
+| - chips: List[Dict]                                                |
+| - next_chip_id: int                                                |
+| - frame_count: int                                                 |
+| - spawn_interval: int                                              |
+| - total_value: int                                                 |
+| - total_real: int                                                  |
+| - total_fake: int                                                  |
+| - session_chips: List[Dict]                                        |
+| - paused: bool                                                     |
++--------------------------------------------------------------------+
+| + __init__(width, height, conveyor_speed)                          |
+| + load_chip_templates() : Dict[str, np.ndarray]                    |
+| + remove_green_background(img) : np.ndarray                        |
+| + calculate_image_difference(img1, img2) : float                   |
+| + apply_fake_alterations(template, chip_type) : Tuple              |
+| + create_green_conveyor_background() : np.ndarray                  |
+| + spawn_chip() : void                                              |
+| + update_chips() : void                                            |
+| + overlay_image_alpha(background, overlay, x, y) : np.ndarray      |
+| + render_frame() : np.ndarray                                      |
+| + draw_statistics(frame) : np.ndarray                              |
+| + reset_statistics() : void                                        |
+| + run() : void                                                     |
++--------------------------------------------------------------------+
+                              |
+                              | uses
+                              v
++--------------------------------------------------------------------+
+|                        Chip Object (Dict)                          |
++--------------------------------------------------------------------+
+| + id: int                                                          |
+| + type: str (GOLD/SILVER/BRONZE)                                   |
+| + x: int                                                           |
+| + y: int                                                           |
+| + width: int                                                       |
+| + height: int                                                      |
+| + template: np.ndarray                                             |
+| + value: int                                                       |
+| + authentic: bool                                                  |
+| + velocity_y: int                                                  |
+| + counted: bool                                                    |
+| + difference: float                                                |
++--------------------------------------------------------------------+
+```
+
+#### 3.1.3 Camera Module Class Diagram
+
+```
++--------------------------------------------------------------------+
+|                       CameraChipSystem                             |
++--------------------------------------------------------------------+
+| - camera: CameraManager                                            |
+| - detector: ChipDetector                                           |
+| - tracker: CentroidTracker                                         |
+| - total_value: int                                                 |
+| - real_count: int                                                  |
+| - fake_count: int                                                  |
+| - fps_queue: deque                                                 |
+| - calibrated: bool                                                 |
+| - running: bool                                                    |
++--------------------------------------------------------------------+
+| + __init__(camera_type, webcam_index)                              |
+| + calibrate_colors() : Dict                                        |
+| + run() : void                                                     |
+| + draw_detections(frame, detections) : np.ndarray                  |
+| + draw_stats(frame) : np.ndarray                                   |
++--------------------------------------------------------------------+
+                        |
+                        | has-a
+                        v
++--------------------------------------------------------------------+
+|                          ChipDetector                              |
++--------------------------------------------------------------------+
+| - color_ranges: Dict[str, Dict]                                    |
+| - min_area: int                                                    |
+| - max_area: int                                                    |
++--------------------------------------------------------------------+
+| + __init__(color_ranges)                                           |
+| + calibrate_chip_color(frame, chip_type) : Dict                    |
+| + detect_chips(frame) : List[Dict]                                 |
+| + extract_digits(roi) : Tuple[int, int, int]                       |
+| + calculate_value(chip_type, digits) : int                         |
++--------------------------------------------------------------------+
+                        |
+                        | produces
+                        v
++--------------------------------------------------------------------+
+|                     Detection Object (Dict)                        |
++--------------------------------------------------------------------+
+| + chip_type: str                                                   |
+| + bbox: Tuple[int, int, int, int]                                  |
+| + centroid: Tuple[int, int]                                        |
+| + area: float                                                      |
+| + digits: Tuple[int, int, int]                                     |
+| + value: int                                                       |
+| + is_fake: bool                                                    |
+| + color: Tuple[int, int, int]                                      |
++--------------------------------------------------------------------+
+```
+
+#### 3.1.4 Sequence Diagram - Chip Detection Process
+
+```
+User          Launcher      Simulator/Camera    ChipDetector       OpenCV
+ |                |                 |                  |              |
+ |  Start App    |                 |                  |              |
+ +-------------->|                 |                  |              |
+ |                |  Create         |                  |              |
+ |                +---------------->|                  |              |
+ |                |                 |  Initialize      |              |
+ |                |                 +----------------->|              |
+ |                |                 |                  |              |
+ |  Spawn/Frame  |                 |                  |              |
+ +-------------->|---------------->|                  |              |
+ |                |                 |  Get Frame       |              |
+ |                |                 |  (or Template)   |              |
+ |                |                 |                  |              |
+ |                |                 |  detect_chips()  |              |
+ |                |                 +----------------->|              |
+ |                |                 |                  |  BGR->HSV    |
+ |                |                 |                  +------------> |
+ |                |                 |                  |<-------------+
+ |                |                 |                  |  HSV image   |
+ |                |                 |                  |              |
+ |                |                 |                  |  inRange()   |
+ |                |                 |                  +------------> |
+ |                |                 |                  |<-------------+
+ |                |                 |                  |  Mask        |
+ |                |                 |                  |              |
+ |                |                 |                  |  Morphology  |
+ |                |                 |                  +------------> |
+ |                |                 |                  |<-------------+
+ |                |                 |                  |  Clean Mask  |
+ |                |                 |                  |              |
+ |                |                 |                  |  findContours|
+ |                |                 |                  +------------> |
+ |                |                 |                  |<-------------+
+ |                |                 |                  |  Contours    |
+ |                |                 |                  |              |
+ |                |                 |                  |  Filter Area |
+ |                |                 |                  |  Calculate   |
+ |                |                 |                  |  Centroid    |
+ |                |                 |  Detections      |              |
+ |                |                 |<-----------------+              |
+ |                |                 |                  |              |
+ |                |                 |  Calculate Value |              |
+ |                |                 |  Render Frame    |              |
+ |                |                 |                  |              |
+ |  Display      |<----------------+                  |              |
+ |<--------------+                 |                  |              |
+ |                |                 |                  |              |
+```
+
+#### 3.1.5 State Diagram - System Operation
+
+```
+                    +--------------+
+                    |   Initial    |
+                    +------+-------+
+                           |
+                           | start()
+                           v
+                    +--------------+
+                    |  Main Menu   |
+                    |  (Launcher)  |
+                    +------+-------+
+                           |
+          +----------------+----------------+
+          |                |                |
+    [1]   |          [2]   |          [3]   |
+          v                v                v
+  +--------------+  +--------------+  +--------------+
+  |  Simulator   |  |Camera-Calib  |  |     Game     |
+  |    Mode      |  |    Mode      |  |     Mode     |
+  +------+-------+  +------+-------+  +------+-------+
+         |                 |                  |
+         | [running]       | [learning]       | [interactive]
+         |                 v                  |
+         |          +--------------+          |
+         |          |Camera-Detect |          |
+         |          |    Mode      |          |
+         |          +------+-------+          |
+         |                 |                  |
+    [P]  |            [P]  |            [ESC] |
+         v                 v                  v
+  +--------------+  +--------------+  +--------------+
+  |   Paused     |  |   Paused     |  |     Exit     |
+  +------+-------+  +------+-------+  +--------------+
+         |                 |
+    [P]  |            [P]  |
+         +--------+--------+
+                  |
+             [Q]  |
+                  v
+          +--------------+
+          |  Terminate   |
+          +--------------+
+```
+
+### 3.2 Module Structure
+
+#### 3.2.1 Launcher Module (`launcher.py`)
 **Purpose**: Unified entry point providing access to all three modes
 
 **Key Classes**: None (functional design)
@@ -440,6 +698,765 @@ alpha = overlay[:, :, 3] / 255.0          # Normalize to [0, 1]
 alpha_3ch = np.stack([alpha] * 3, axis=-1) # Broadcast to RGB
 foreground = overlay[:, :, :3]
 blended = (alpha_3ch * foreground + (1 - alpha_3ch) * roi).astype(np.uint8)
+```
+
+---
+
+## 6.3 Digital Image Processing Principles
+
+This section provides a comprehensive explanation of how chips are identified and their values calculated using fundamental digital image processing techniques.
+
+### 6.3.1 Image Representation & Color Spaces
+
+#### Digital Image Fundamentals
+
+A digital image is represented as a discrete function `I(x, y)` where:
+- `x, y` are spatial coordinates (pixel locations)
+- `I(x, y)` is the intensity or color value at that location
+- Image dimensions: `M × N` pixels (height × width)
+- Color channels: 3 channels (BGR/RGB) or 4 channels (BGRA with alpha)
+
+**Mathematical Representation**:
+```
+I(x, y) = [B(x, y), G(x, y), R(x, y)]
+where: 0 ≤ x < M, 0 ≤ y < N, 0 ≤ B,G,R ≤ 255
+```
+
+#### BGR to HSV Color Space Transformation
+
+**Why HSV for Object Detection?**
+
+The HSV color space separates chromatic content (Hue, Saturation) from achromatic intensity (Value), making it invariant to lighting changes.
+
+**Transformation Equations**:
+
+Given BGR values (normalized to [0, 1]):
+```
+B', G', R' = B/255, G/255, R/255
+Cmax = max(R', G', B')
+Cmin = min(R', G', B')
+Δ = Cmax - Cmin
+```
+
+**Hue Calculation**:
+```
+         ⎧ undefined,              if Δ = 0
+         ⎪ 60° × (G'-B')/Δ mod 6, if Cmax = R'
+H = 60° ×⎨ 60° × (B'-R')/Δ + 2,   if Cmax = G'
+         ⎪ 60° × (R'-G')/Δ + 4,   if Cmax = B'
+         ⎩
+```
+
+**Saturation Calculation**:
+```
+    ⎧ 0,         if Cmax = 0
+S = ⎨
+    ⎩ Δ/Cmax,    otherwise
+```
+
+**Value Calculation**:
+```
+V = Cmax
+```
+
+**OpenCV HSV Ranges**:
+- Hue: 0-180 (scaled from 0-360° to fit in uint8)
+- Saturation: 0-255 (0% to 100% scaled)
+- Value: 0-255 (0% to 100% scaled)
+
+**Our Chip Color Ranges**:
+
+```
+GOLD Chip:
+  H ∈ [20, 35]    → Yellow-Orange hue (40-70° in standard)
+  S ∈ [100, 255]  → High saturation (vivid color)
+  V ∈ [100, 255]  → Medium to bright
+
+SILVER Chip:
+  H ∈ [0, 180]    → Any hue (achromatic)
+  S ∈ [0, 50]     → Low saturation (gray-ish)
+  V ∈ [100, 255]  → Medium to bright
+
+BRONZE Chip:
+  H ∈ [5, 25]     → Orange-Brown hue
+  S ∈ [50, 255]   → Moderate to high saturation
+  V ∈ [50, 200]   → Medium brightness
+```
+
+### 6.3.2 Image Preprocessing Pipeline
+
+#### Step 1: Gaussian Blur (Noise Reduction)
+
+**Purpose**: Remove high-frequency noise while preserving edges
+
+**2D Gaussian Kernel**:
+```
+G(x, y) = (1 / 2πσ²) × exp(-(x² + y²) / 2σ²)
+```
+
+**Discrete Convolution**:
+```
+I'(x, y) = Σ Σ G(i, j) × I(x-i, y-j)
+          i  j
+```
+
+**Our Implementation**: 5×5 kernel with σ ≈ 1.0
+```python
+blurred = cv2.GaussianBlur(frame, (5, 5), 0)
+```
+
+**Effect**:
+- Reduces salt-and-pepper noise
+- Smooths color variations within chips
+- Improves color segmentation accuracy
+- Computational complexity: O(M × N × k²) where k = kernel size
+
+#### Step 2: Color Space Conversion
+
+```python
+hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+```
+
+**Pixel-wise transformation**: Each pixel independently converted using formulas above
+**Complexity**: O(M × N)
+
+### 6.3.3 Color-Based Segmentation
+
+#### Binary Thresholding in HSV Space
+
+**Objective**: Create binary mask where 1 = chip color, 0 = background
+
+**Threshold Function**:
+```
+M(x, y) = ⎧ 1,  if Hlow ≤ H(x,y) ≤ Hhigh AND
+          ⎪     Slow ≤ S(x,y) ≤ Shigh AND
+          ⎨     Vlow ≤ V(x,y) ≤ Vhigh
+          ⎪
+          ⎩ 0,  otherwise
+```
+
+**Implementation**:
+```python
+mask = cv2.inRange(hsv, lower_bound, upper_bound)
+```
+
+**Mathematical Operation**:
+```
+For each pixel (x, y):
+  if lower ≤ hsv(x, y) ≤ upper (component-wise):
+    mask(x, y) = 255
+  else:
+    mask(x, y) = 0
+```
+
+### 6.3.4 Morphological Operations
+
+#### Mathematical Morphology
+
+Based on set theory and operations on geometric structures.
+
+**Structuring Element**: 5×5 square kernel
+```
+SE = ⎡1 1 1 1 1⎤
+     ⎢1 1 1 1 1⎥
+     ⎢1 1 1 1 1⎥
+     ⎢1 1 1 1 1⎥
+     ⎣1 1 1 1 1⎦
+```
+
+#### Erosion
+
+**Definition**: Shrinks bright regions
+```
+(I ⊖ SE)(x, y) = min {I(x+i, y+j) | (i,j) ∈ SE}
+```
+
+**Effect**: Removes small white noise, disconnects weakly connected components
+
+#### Dilation
+
+**Definition**: Expands bright regions
+```
+(I ⊕ SE)(x, y) = max {I(x+i, y+j) | (i,j) ∈ SE}
+```
+
+**Effect**: Fills small holes, connects nearby components
+
+#### Opening (Erosion followed by Dilation)
+
+```
+Opening(I) = (I ⊖ SE) ⊕ SE
+```
+
+**Purpose**: Remove small objects (noise) while preserving larger structures
+
+**Our Usage**:
+```python
+mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+```
+
+**Effect**: Eliminates isolated white pixels (false positives)
+
+#### Closing (Dilation followed by Erosion)
+
+```
+Closing(I) = (I ⊕ SE) ⊖ SE
+```
+
+**Purpose**: Fill small holes in objects while preserving boundaries
+
+**Our Usage**:
+```python
+mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+```
+
+**Effect**: Fills gaps within chip regions
+
+**Processing Order**:
+```
+1. CLOSE: Fill internal gaps in chips
+2. OPEN: Remove small noise blobs
+Result: Clean, solid chip regions
+```
+
+### 6.3.5 Contour Detection & Analysis
+
+#### Contour Detection Algorithm
+
+**Suzuki-Abe Border Following Algorithm**:
+
+**Input**: Binary image M(x, y)
+**Output**: List of contours C = {C₁, C₂, ..., Cₙ}
+
+**Process**:
+1. Scan image left-to-right, top-to-bottom
+2. When encountering a foreground pixel not yet visited:
+   - Start border following
+   - Trace boundary clockwise
+   - Record pixel coordinates
+3. Continue until all borders found
+
+**Our Implementation**:
+```python
+contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+```
+
+**Parameters**:
+- `RETR_EXTERNAL`: Only outermost contours (ignore holes)
+- `CHAIN_APPROX_SIMPLE`: Compress horizontal/vertical/diagonal segments
+
+#### Contour Filtering
+
+**Area Calculation**:
+```
+Area = Σ (xᵢyᵢ₊₁ - xᵢ₊₁yᵢ) / 2
+      i=0
+```
+
+Using Green's theorem for polygon area.
+
+**Our Thresholds**:
+```python
+min_area = 2000 pixels²   # Reject small noise
+max_area = 50000 pixels²  # Reject oversized regions
+```
+
+**Area Filter**:
+```
+Valid if: min_area ≤ Area(C) ≤ max_area
+```
+
+#### Bounding Box Extraction
+
+**Axis-Aligned Bounding Box (AABB)**:
+```
+xmin = min{x | (x, y) ∈ C}
+xmax = max{x | (x, y) ∈ C}
+ymin = min{y | (x, y) ∈ C}
+ymax = max{y | (x, y) ∈ C}
+
+BBox = (xmin, ymin, xmax - xmin, ymax - ymin)
+```
+
+**Centroid Calculation**:
+```
+cx = (xmin + xmax) / 2
+cy = (ymin + ymax) / 2
+Centroid = (cx, cy)
+```
+
+### 6.3.6 Chip Type Classification
+
+**Decision Tree**:
+```
+For each detected contour:
+  1. Extract ROI: I_roi = I[ymin:ymax, xmin:xmax]
+  2. Determine which color mask detected it
+  3. Classify:
+     - If detected in GOLD mask → Type = GOLD
+     - If detected in SILVER mask → Type = SILVER  
+     - If detected in BRONZE mask → Type = BRONZE
+```
+
+### 6.3.7 Value Calculation Algorithms
+
+#### Gold Chip Value Calculation
+
+**Input**: Three-digit number `d₁d₂d₃`
+**Process**: Concatenate digits and multiply by 10
+
+**Mathematical Formula**:
+```
+Value_GOLD = (d₁ × 10² + d₂ × 10¹ + d₃ × 10⁰) × 10
+           = (100d₁ + 10d₂ + d₃) × 10
+           = 1000d₁ + 100d₂ + 10d₃
+```
+
+**Example**: Digits = [7, 5, 2]
+```
+Value = (7×100 + 5×10 + 2) × 10
+      = 752 × 10
+      = 7520 CR
+```
+
+**Implementation**:
+```python
+value = int(f"{d1}{d2}{d3}") * 10
+```
+
+#### Silver Chip Value Calculation
+
+**Input**: Three-digit number `d₁d₂d₃`
+**Process**: Concatenate digits directly
+
+**Mathematical Formula**:
+```
+Value_SILVER = d₁ × 10² + d₂ × 10¹ + d₃ × 10⁰
+             = 100d₁ + 10d₂ + d₃
+```
+
+**Example**: Digits = [9, 1, 3]
+```
+Value = 9×100 + 1×10 + 3
+      = 913 CR
+```
+
+**Implementation**:
+```python
+value = int(f"{d1}{d2}{d3}")
+```
+
+#### Bronze Chip Value Calculation
+
+**Input**: Three-digit number `d₁d₂d₃`
+**Process**: Multiply all digits
+
+**Mathematical Formula**:
+```
+Value_BRONZE = d₁ × d₂ × d₃
+```
+
+**Example**: Digits = [7, 3, 3]
+```
+Value = 7 × 3 × 3
+      = 63 CR
+```
+
+**Implementation**:
+```python
+value = d1 * d2 * d3
+```
+
+#### Fake Chip Detection
+
+**Method**: Image difference calculation using pixel-wise comparison
+
+**Difference Metric**:
+```
+For reference image R and test image T:
+
+1. Convert to grayscale:
+   R_gray(x, y) = 0.299×R(x,y) + 0.587×G(x,y) + 0.114×B(x,y)
+   T_gray(x, y) = 0.299×T(x,y) + 0.587×G(x,y) + 0.114×B(x,y)
+
+2. Absolute difference:
+   Diff(x, y) = |R_gray(x, y) - T_gray(x, y)|
+
+3. Thresholding:
+   Diff_binary(x, y) = ⎧ 1,  if Diff(x, y) > τ
+                        ⎩ 0,  otherwise
+   
+   where τ = 10 (noise tolerance threshold)
+
+4. Calculate difference percentage:
+   PercentDiff = (Σ Σ Diff_binary(x, y)) / (M × N)
+                  x y
+
+5. Authenticity decision:
+   Authentic = ⎧ True,   if PercentDiff ≤ 5%
+               ⎩ False,  if PercentDiff > 5%
+```
+
+**Implementation**:
+```python
+def calculate_image_difference(img1, img2):
+    # Grayscale conversion
+    img1_gray = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
+    img2_gray = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+    
+    # Absolute difference
+    diff = cv2.absdiff(img1_gray, img2_gray)
+    
+    # Count pixels above threshold
+    non_zero = np.count_nonzero(diff > 10)
+    total_pixels = diff.size
+    
+    # Percentage difference
+    difference_percent = non_zero / total_pixels
+    
+    return difference_percent
+```
+
+**Fake Alterations Applied**:
+1. **Noise Addition**: Gaussian/Salt-pepper noise → Δ = N(0, σ²)
+2. **Blur**: Gaussian filter with large σ → Loss of detail
+3. **Color Shift**: HSV hue rotation → H' = (H + δ) mod 180
+4. **Rotation**: Affine transform → Loss of alignment
+5. **Cropping**: Black patches → Missing regions
+
+### 6.3.8 Alpha Blending & Compositing
+
+#### Porter-Duff Compositing
+
+**Over Operator** (Foreground over Background):
+
+```
+For each pixel (x, y):
+
+α_f = alpha_foreground(x, y) / 255
+α_b = 1.0 (opaque background)
+
+C_out(x, y) = α_f × C_f(x, y) + (1 - α_f) × C_b(x, y)
+
+For RGB channels:
+R_out = α_f × R_f + (1 - α_f) × R_b
+G_out = α_f × G_f + (1 - α_f) × G_b
+B_out = α_f × B_f + (1 - α_f) × B_b
+```
+
+**Example**:
+```
+Foreground: R=255, G=215, B=0, α=0.8 (Gold chip)
+Background: R=60, G=180, B=75, α=1.0 (Green belt)
+
+R_out = 0.8×255 + 0.2×60  = 204 + 12  = 216
+G_out = 0.8×215 + 0.2×180 = 172 + 36  = 208
+B_out = 0.8×0   + 0.2×75  = 0   + 15  = 15
+
+Result: (216, 208, 15) - Goldish with green tint at edges
+```
+
+**Anti-aliasing**: Partial alpha values (0 < α < 1) at edges create smooth transitions
+
+#### Region of Interest (ROI) Overlay
+
+**Process**:
+```
+1. Define chip position: (x_chip, y_chip)
+2. Define chip size: (w_chip, h_chip)
+3. Extract background ROI:
+   ROI_bg = Background[y:y+h, x:x+w]
+4. Apply alpha blending:
+   ROI_blended = AlphaBlend(Chip, ROI_bg)
+5. Place back:
+   Background[y:y+h, x:x+w] = ROI_blended
+```
+
+**Boundary Conditions**: Clip to image boundaries to prevent index errors
+
+### 6.3.9 Statistical Tracking
+
+**Real-time Accumulation**:
+```
+For each detected chip i:
+  if authentic(i):
+    total_value += value(i)
+    real_count += 1
+  else:
+    fake_count += 1
+
+Statistics displayed:
+  - Total Value: Σ value(i) for authentic chips
+  - Real Count: Number of authentic chips
+  - Fake Count: Number of fake chips
+  - Average Value: total_value / real_count
+```
+
+### 6.3.10 Performance Metrics
+
+**Frame Rate Calculation**:
+```
+Δt = time_current - time_previous
+FPS = 1 / Δt
+
+Smoothed FPS (exponential moving average):
+FPS_smooth = α × FPS_current + (1-α) × FPS_previous
+where α = 0.1 (smoothing factor)
+```
+
+**Computational Complexity Analysis**:
+
+| Operation | Complexity | Time (1280×720) |
+|-----------|------------|-----------------|
+| BGR to HSV | O(M×N) | ~2 ms |
+| Gaussian Blur | O(M×N×k²) | ~3 ms |
+| inRange | O(M×N) | ~1 ms |
+| Morphology | O(M×N×k²) | ~4 ms |
+| Find Contours | O(M×N) | ~5 ms |
+| Alpha Blend | O(w×h) per chip | ~0.5 ms |
+| **Total** | O(M×N) | **~15-20 ms** |
+
+**Theoretical Maximum**: 50-66 FPS
+**Achieved**: 30-45 FPS (including rendering and I/O)
+
+### 6.3.11 Complete Detection Pipeline Flowchart
+
+```
++------------------------------------------------------------------+
+|                     START: Input Frame/Template                  |
+|                        (1280x720 BGR Image)                      |
++-----------------------------+------------------------------------+
+                              |
+                              v
++------------------------------------------------------------------+
+|  STEP 1: Noise Reduction                                         |
+|  +-------------------------------------------------+             |
+|  | Gaussian Blur (5x5 kernel, sigma=1.0)          |             |
+|  | Formula: G(x,y) = 1/(2*pi*sigma^2)*exp(-(x^2+y^2)/2*sigma^2) |
+|  | Effect: Smooth color variations                |             |
+|  +-------------------------------------------------+             |
++-----------------------------+------------------------------------+
+                              |
+                              v
++------------------------------------------------------------------+
+|  STEP 2: Color Space Transformation                              |
+|  +-------------------------------------------------+             |
+|  | BGR -> HSV Conversion                           |             |
+|  | H = f(R,G,B) in [0, 180]                        |             |
+|  | S = Delta/Cmax in [0, 255]                      |             |
+|  | V = Cmax in [0, 255]                            |             |
+|  +-------------------------------------------------+             |
++-----------------------------+------------------------------------+
+                              |
+                              v
++------------------------------------------------------------------+
+|  STEP 3: Color Segmentation (for each chip type)                |
+|  +-------------------------------------------------+             |
+|  | HSV Range Thresholding (inRange)               |             |
+|  | Mask(x,y) = 1 if L <= HSV(x,y) <= U            |             |
+|  |            = 0 otherwise                        |             |
+|  |                                                 |             |
+|  | GOLD:   H[20,35], S[100,255], V[100,255]       |             |
+|  | SILVER: H[0,180], S[0,50],    V[100,255]       |             |
+|  | BRONZE: H[5,25],  S[50,255],  V[50,200]        |             |
+|  +-------------------------------------------------+             |
++-----------------------------+------------------------------------+
+                              |
+                              v
++------------------------------------------------------------------+
+|  STEP 4: Morphological Operations                                |
+|  +-------------------------------------------------+             |
+|  | 4a. MORPH_CLOSE (Fill internal holes)          |             |
+|  |     Closing = (M (+) SE) (-) SE                |             |
+|  |                                                 |             |
+|  | 4b. MORPH_OPEN (Remove noise)                  |             |
+|  |     Opening = (M (-) SE) (+) SE                |             |
+|  |                                                 |             |
+|  | Structuring Element: 5x5 square                |             |
+|  +-------------------------------------------------+             |
++-----------------------------+------------------------------------+
+                              |
+                              v
++------------------------------------------------------------------+
+|  STEP 5: Contour Detection                                       |
+|  +-------------------------------------------------+             |
+|  | Suzuki-Abe Border Following Algorithm           |             |
+|  | Mode: RETR_EXTERNAL (outer contours only)       |             |
+|  | Approx: CHAIN_APPROX_SIMPLE (compress)          |             |
+|  | Output: List of contour points                  |             |
+|  +-------------------------------------------------+             |
++-----------------------------+------------------------------------+
+                              |
+                              v
++------------------------------------------------------------------+
+|  STEP 6: Contour Filtering & Feature Extraction                 |
+|  +-------------------------------------------------+             |
+|  | For each contour:                               |             |
+|  |   * Calculate Area = Sum(xi*yi+1 - xi+1*yi)/2  |             |
+|  |   * Filter: 2000 <= Area <= 50000              |             |
+|  |   * Bounding Box: (xmin, ymin, w, h)           |             |
+|  |   * Centroid: (cx, cy)                         |             |
+|  |   * Chip Type: Based on detection mask         |             |
+|  +-------------------------------------------------+             |
++-----------------------------+------------------------------------+
+                              |
+                              v
++------------------------------------------------------------------+
+|  STEP 7: Digit Extraction (ROI Processing)                      |
+|  +-------------------------------------------------+             |
+|  | Extract chip ROI: I_roi[y:y+h, x:x+w]          |             |
+|  |                                                 |             |
+|  | Current: Random digit generation (demo)         |             |
+|  | Future: OCR using Tesseract/Deep Learning      |             |
+|  |                                                 |             |
+|  | Output: (d1, d2, d3) digit tuple               |             |
+|  +-------------------------------------------------+             |
++-----------------------------+------------------------------------+
+                              |
+                              v
++------------------------------------------------------------------+
+|  STEP 8: Value Calculation                                       |
+|  +-------------------------------------------------+             |
+|  | Switch (chip_type):                             |             |
+|  |                                                 |             |
+|  |  GOLD:   Value = (100*d1 + 10*d2 + d3) * 10    |             |
+|  |  SILVER: Value = 100*d1 + 10*d2 + d3           |             |
+|  |  BRONZE: Value = d1 * d2 * d3                  |             |
+|  +-------------------------------------------------+             |
++-----------------------------+------------------------------------+
+                              |
+                              v
++------------------------------------------------------------------+
+|  STEP 9: Authenticity Check (Simulator Mode)                    |
+|  +-------------------------------------------------+             |
+|  | Compare with reference template:                |             |
+|  |                                                 |             |
+|  | Diff = |I_test - I_reference|                  |             |
+|  | DiffPercent = Sum(Diff > tau) / TotalPixels    |             |
+|  |                                                 |             |
+|  | If DiffPercent > 5%: FAKE (Value = 0)          |             |
+|  | Else:                REAL (Value = calculated) |             |
+|  +-------------------------------------------------+             |
++-----------------------------+------------------------------------+
+                              |
+                              v
++------------------------------------------------------------------+
+|  STEP 10: Object Tracking (Camera Mode)                         |
+|  +-------------------------------------------------+             |
+|  | Centroid-based Tracking:                        |             |
+|  |                                                 |             |
+|  | * Match current centroids with previous         |             |
+|  | * Euclidean distance: d = sqrt((x2-x1)^2+(y2-y1)^2)          |
+|  | * Assign persistent ID if d < threshold         |             |
+|  | * Handle disappearances (max 30 frames)         |             |
+|  +-------------------------------------------------+             |
++-----------------------------+------------------------------------+
+                              |
+                              v
++------------------------------------------------------------------+
+|  STEP 11: Statistics Update                                      |
+|  +-------------------------------------------------+             |
+|  | If chip crosses counting line:                  |             |
+|  |   * Increment real_count or fake_count          |             |
+|  |   * Add to total_value (if authentic)           |             |
+|  |   * Update average value                        |             |
+|  |   * Store in session history                    |             |
+|  +-------------------------------------------------+             |
++-----------------------------+------------------------------------+
+                              |
+                              v
++------------------------------------------------------------------+
+|  STEP 12: Visualization & Rendering                              |
+|  +-------------------------------------------------+             |
+|  | * Draw bounding boxes                           |             |
+|  | * Overlay chip images (alpha blending)          |             |
+|  | * Annotate chip ID, type, value                 |             |
+|  | * Display statistics panel                      |             |
+|  | * Calculate and show FPS                        |             |
+|  +-------------------------------------------------+             |
++-----------------------------+------------------------------------+
+                              |
+                              v
++------------------------------------------------------------------+
+|                   OUTPUT: Annotated Frame                        |
+|                     (Display to User)                            |
++------------------------------------------------------------------+
+```
+
+### 6.3.12 Data Flow Diagram
+
+```
++--------------+
+|   Camera     |----------+
+|   or PNG     |          |
+|  Template    |          |
++--------------+          |
+                          | Raw Image
+                          | (BGR, MxNx3)
+                          v
+              +------------------+
+              |  Preprocessing   |
+              |   Module         |
+              +---------+--------+
+                        | HSV Image
+                        | Blurred
+                        v
+              +------------------+
+              |   Segmentation   |-----> Binary Masks
+              |     Module       |       (3 chip types)
+              +---------+--------+
+                        |
+                        v
+              +------------------+
+              |  Morphology      |-----> Cleaned Masks
+              |   Module         |
+              +---------+--------+
+                        |
+                        v
+              +------------------+
+              |   Contour        |-----> Contour Lists
+              |   Detection      |       + Features
+              +---------+--------+
+                        |
+          +-------------+-------------+
+          |                           |
+          v                           v
++-------------------+       +-------------------+
+|  Classification   |       |  Value            |
+|  Module           |       |  Calculation      |
+|  (Type)           |       |  Module           |
++---------+---------+       +---------+---------+
+          |                           |
+          | Chip Type                 | Value
+          |                           |
+          +-----------+---------------+
+                      |
+                      v
+            +-------------------+
+            |  Authenticity     |
+            |  Check Module     |
+            +----------+--------+
+                       |
+                       | Detection Object
+                       | {type, value, bbox, 
+                       |  centroid, is_fake}
+                       v
+            +-------------------+
+            |   Tracking        |-----> Persistent IDs
+            |   Module          |       Object History
+            +----------+--------+
+                       |
+                       v
+            +-------------------+
+            |  Statistics       |-----> Totals
+            |  Aggregator       |       Averages
+            +----------+--------+       Counts
+                       |
+                       v
+            +-------------------+
+            |  Visualization    |-----> Annotated
+            |  Renderer         |       Frame
+            +-------------------+
 ```
 
 ---

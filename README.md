@@ -40,13 +40,25 @@ python game.py
 
 ## Features
 
+### 🎯 NEW: Intelligent Feature Detection
+- **Learning Phase**: Automatically learns special characteristics of each chip type
+  - **GOLD**: Detects "7" symbol with line
+  - **SILVER**: Detects square box pattern
+  - **BRONZE**: Baseline geometric features
+- **Inference Phase**: Verifies chips using learned features
+- **Dual Detection**: Combines pixel-difference AND feature-based detection
+- **Match Scoring**: 70% threshold for authentication (symbol 60%, color 25%, texture 15%)
+- **Debug Visualization**: Shows feature scores and detection methods on each chip
+
+See [FEATURE_DETECTION_QUICKSTART.md](FEATURE_DETECTION_QUICKSTART.md) for details.
+
 ### Simulator Mode
 - **Green Conveyor Belt**: 50% screen width, centered with moving texture
 - **Three Chip Types**:
   - **GOLD** (Yellow): Value = 3 digits × 10 (e.g., 752 → 7520 CR)
   - **SILVER** (Blue): Value = 3 digits (e.g., 756 → 756 CR)
   - **BRONZE** (Orange): Value = 2 digits × × (e.g., 2×4 → 8 CR)
-- **Real & Fake Detection**: 80% real chips, 20% fake chips
+- **Real & Fake Detection**: 80% real chips, 20% fake chips (5% pixel threshold + feature detection)
 - **Straight Line Movement**: Chips move perpendicular to belt motion
 - **Real-time Statistics**: Track total value, real/fake counts
 
