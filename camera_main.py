@@ -21,6 +21,13 @@ except ImportError:
     CAMERA_AVAILABLE = False
     print("⚠️  Warning: Camera modules not found. Will use demo mode.")
 
+# Check for Basler camera support
+try:
+    from pypylon import pylon
+    BASLER_AVAILABLE = True
+except ImportError:
+    BASLER_AVAILABLE = False
+
 
 class ChipDetector:
     """Detect and classify chips by color"""
@@ -213,10 +220,16 @@ class CameraChipSystem:
         if CAMERA_AVAILABLE:
             print(f"[1/4] Connecting to {camera_type}...")
             self.camera = CameraManager(
+                camera_type=camera_type,
                 camera_index=webcam_index,
                 width=1280,
                 height=720
             )
+            
+            # Open the camera
+            if not self.camera.open():
+                print("❌ Failed to open camera!")
+                self.camera = None
         else:
             print("[1/4] Camera unavailable - using demo mode")
             self.camera = None
@@ -482,13 +495,19 @@ def main():
     print("CAMERA SELECTION")
     print("="*60)
     print("1. Webcam (default)")
-    print("2. Basler camera")
+    print(f"2. Basler camera {'✓' if BASLER_AVAILABLE else '✗ (pypylon not installed)'}")
     print("="*60)
     
     choice = input("\nSelect camera type (1/2) [1]: ").strip()
     
     if choice == "2":
-        camera_type = "BASLER"
+        if not BASLER_AVAILABLE:
+            print("\n⚠️  Warning: pypylon not installed!")
+            print("   Install with: pip install pypylon")
+            print("   Falling back to webcam...\n")
+            camera_type = "WEBCAM"
+        else:
+            camera_type = "BASLER"
     else:
         camera_type = "WEBCAM"
     
