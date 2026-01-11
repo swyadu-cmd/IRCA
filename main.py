@@ -41,6 +41,16 @@ class ConveyorSimulator:
         self.total_fake = 0
         self.session_chips = []
         
+        # Test mode tracking
+        self.test_mode = False
+        self.test_real_count = 0
+        self.test_fake_count = 0
+        self.test_real_spawned = 0
+        self.test_fake_spawned = 0
+        self.test_real_detected = 0
+        self.test_fake_detected = 0
+        self.test_chips_spawned = []  # Track each spawned chip's ground truth
+        
         print("🎬 Intergalactic Riksbanken Chip Authenticator initialized")
         print(f"   Resolution: {width}x{height}")
         print(f"   Belt width: {self.belt_width}px (50% of screen)")
@@ -181,16 +191,40 @@ class ConveyorSimulator:
         
         return background
     
-    def spawn_chip(self):
-        """Spawn a new chip with fake detection based on 5% difference threshold"""
-        chip_type = random.choices(['GOLD', 'SILVER', 'BRONZE'], weights=[0.15, 0.35, 0.50])[0]
+    def spawn_chip(self, force_authentic=None, chip_type_override=None):
+        """Spawn a new chip with fake detection based on 5% difference threshold
+        
+        Args:
+            force_authentic: If True, force real chip. If False, force fake chip. If None, random.
+            chip_type_override: Force specific chip type ('GOLD', 'SILVER', 'BRONZE')
+        """
+        if chip_type_override:
+            chip_type = chip_type_override
+        else:
+            chip_type = random.choices(['GOLD', 'SILVER', 'BRONZE'], weights=[0.15, 0.35, 0.50])[0]
         
         if chip_type not in self.chip_templates:
             return
         
         # Get reference template and apply potential alterations
         reference_template = self.reference_templates[chip_type]
-        altered_template, is_fake = self.apply_fake_alterations(reference_template, chip_type)
+        
+        # Override fake/real if specified
+        if force_authentic is not None:
+            if force_authentic:
+                # Force real chip - no alterations
+                altered_template = reference_template.copy()
+                is_fake = False
+            else:
+                # Force fake chip - apply heavy alterations
+                altered_template, is_fake = self.apply_fake_alterations(reference_template, chip_type)
+                # Ensure it's actually fake by reapplying if needed
+                attempts = 0
+                while not is_fake and attempts < 5:
+                    altered_template, is_fake = self.apply_fake_alterations(reference_template, chip_type)
+                    attempts += 1
+        else:
+            altered_template, is_fake = self.apply_fake_alterations(reference_template, chip_type)
         
         h, w = altered_template.shape[:2]
         
@@ -227,6 +261,19 @@ class ConveyorSimulator:
         self.chips.append(chip)
         self.next_chip_id += 1
         fake_status = 'FAKE' if is_fake else 'REAL'
+        
+        # Track in test mode
+        if self.test_mode:
+            self.test_chips_spawned.append({
+                'id': chip['id'],
+                'authentic': authentic,
+                'counted': False
+            })
+            if authentic:
+                self.test_real_spawned += 1
+            else:
+                self.test_fake_spawned += 1
+        
         print(f"✨ Spawned {chip_type} #{chip['id']} - {fake_status} - {value} CR (Diff: {diff_percent*100:.1f}%)")
     
     def update_chips(self):
@@ -243,6 +290,17 @@ class ConveyorSimulator:
                 else:
                     self.total_fake += 1
                 self.session_chips.append({'type': chip['type'], 'value': chip['value'], 'authentic': chip['authentic']})
+                
+                # Update test mode detection counts
+                if self.test_mode:
+                    for test_chip in self.test_chips_spawned:
+                        if test_chip['id'] == chip['id'] and not test_chip['counted']:
+                            test_chip['counted'] = True
+                            if chip['authentic']:
+                                self.test_real_detected += 1
+                            else:
+                                self.test_fake_detected += 1
+                            break
             
             if chip['y'] > self.height + 50:
                 chips_to_remove.append(i)
@@ -276,10 +334,15 @@ class ConveyorSimulator:
     def draw_ui(self, frame):
         """Draw UI overlay"""
         overlay = frame.copy()
-        cv2.rectangle(overlay, (10, 10), (400, 220), (0, 0, 0), -1)
+        
+        # Adjust overlay height based on test mode
+        overlay_height = 320 if self.test_mode else 220
+        cv2.rectangle(overlay, (10, 10), (450, overlay_height), (0, 0, 0), -1)
         cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
         
-        cv2.putText(frame, "CHIP CONVEYOR SYSTEM", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+        title = "TEST MODE" if self.test_mode else "CHIP CONVEYOR SYSTEM"
+        title_color = (0, 255, 255) if not self.test_mode else (255, 100, 255)
+        cv2.putText(frame, title, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, title_color, 2)
         y = 75
         cv2.putText(frame, f"On Belt: {len(self.chips)} chips", (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
         y += 30
@@ -291,7 +354,25 @@ class ConveyorSimulator:
         y += 30
         cv2.putText(frame, f"Scanned: {len(self.session_chips)}", (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 2)
         
-        instructions = ["Controls:", "S - Spawn | B - Burst (5) | C - Clear", "P - Pause | R - Reset | Q - Quit"]
+        # Test mode stats
+        if self.test_mode:
+            y += 40
+            cv2.putText(frame, "TEST VALIDATION:", (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 100, 255), 2)
+            y += 25
+            real_accuracy = f"{self.test_real_detected}/{self.test_real_spawned}" if self.test_real_spawned > 0 else "0/0"
+            cv2.putText(frame, f"Real detected: {real_accuracy}", (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+            y += 20
+            fake_accuracy = f"{self.test_fake_detected}/{self.test_fake_spawned}" if self.test_fake_spawned > 0 else "0/0"
+            cv2.putText(frame, f"Fake detected: {fake_accuracy}", (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+            y += 25
+            total_spawned = self.test_real_spawned + self.test_fake_spawned
+            total_detected = self.test_real_detected + self.test_fake_detected
+            if total_spawned > 0:
+                accuracy = (total_detected / total_spawned) * 100
+                accuracy_color = (0, 255, 0) if accuracy >= 90 else (0, 255, 255) if accuracy >= 70 else (0, 0, 255)
+                cv2.putText(frame, f"Accuracy: {accuracy:.1f}%", (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, accuracy_color, 2)
+        
+        instructions = ["Controls:", "S - Spawn | B - Burst (5) | T - Test Mode", "C - Clear | P - Pause | R - Reset | Q - Quit"]
         y = frame.shape[0] - 80
         for instruction in instructions:
             cv2.putText(frame, instruction, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
@@ -322,10 +403,80 @@ class ConveyorSimulator:
         self.draw_ui(frame)
         return frame
     
+    def spawn_test_batch(self, num_real, num_fake):
+        """Spawn a specific number of real and fake chips for testing
+        
+        Args:
+            num_real: Number of real chips to spawn
+            num_fake: Number of fake chips to spawn
+        """
+        print(f"\n🧪 TEST BATCH: Spawning {num_real} real + {num_fake} fake chips...")
+        
+        # Enable test mode
+        self.test_mode = True
+        self.test_real_spawned = 0
+        self.test_fake_spawned = 0
+        self.test_real_detected = 0
+        self.test_fake_detected = 0
+        self.test_chips_spawned.clear()
+        
+        # Spawn real chips
+        for _ in range(num_real):
+            self.spawn_chip(force_authentic=True)
+        
+        # Spawn fake chips
+        for _ in range(num_fake):
+            self.spawn_chip(force_authentic=False)
+        
+        print(f"✅ Test batch ready: {num_real} real, {num_fake} fake")
+        print(f"   System will validate detection accuracy.")
+    
+    def print_test_results(self):
+        """Print test mode results"""
+        if not self.test_mode:
+            return
+        
+        print("\n" + "="*60)
+        print("🧪 TEST RESULTS")
+        print("="*60)
+        
+        total_spawned = self.test_real_spawned + self.test_fake_spawned
+        total_detected = self.test_real_detected + self.test_fake_detected
+        
+        print(f"\nChips Spawned: {total_spawned}")
+        print(f"  Real:  {self.test_real_spawned}")
+        print(f"  Fake:  {self.test_fake_spawned}")
+        
+        print(f"\nChips Detected: {total_detected}")
+        print(f"  Real detected:  {self.test_real_detected}/{self.test_real_spawned}")
+        print(f"  Fake detected:  {self.test_fake_detected}/{self.test_fake_spawned}")
+        
+        if total_spawned > 0:
+            accuracy = (total_detected / total_spawned) * 100
+            print(f"\nOverall Accuracy: {accuracy:.1f}%")
+            
+            if self.test_real_spawned > 0:
+                real_accuracy = (self.test_real_detected / self.test_real_spawned) * 100
+                print(f"Real Chip Accuracy: {real_accuracy:.1f}%")
+            
+            if self.test_fake_spawned > 0:
+                fake_accuracy = (self.test_fake_detected / self.test_fake_spawned) * 100
+                print(f"Fake Chip Accuracy: {fake_accuracy:.1f}%")
+            
+            # Pass/Fail verdict
+            if accuracy >= 90:
+                print("\n✅ TEST PASSED (≥90% accuracy)")
+            elif accuracy >= 70:
+                print("\n⚠️  TEST MARGINAL (70-89% accuracy)")
+            else:
+                print("\n❌ TEST FAILED (<70% accuracy)")
+        
+        print("="*60)
+    
     def run(self):
         """Main simulation loop"""
         print("\n🎬 Starting Intergalactic Riksbanken Chip Authenticator...")
-        print("Controls: S-Spawn | B-Burst(5) | C-Clear | P-Pause | R-Reset | Q-Quit\n")
+        print("Controls: S-Spawn | B-Burst(5) | T-Test | C-Clear | P-Pause | R-Reset | Q-Quit\n")
         
         paused = False
         while True:
@@ -350,12 +501,46 @@ class ConveyorSimulator:
                 paused = not paused
                 print(f"\n{'⏸️  PAUSED' if paused else '▶️  RESUMED'}")
                 if paused: print(f"   Value: {self.total_value} CR | Real: {self.total_real} | Fake: {self.total_fake}")
+            elif key == ord('t') or key == ord('T'):
+                # Test mode - prompt for numbers
+                print("\n" + "="*60)
+                print("🧪 TEST MODE")
+                print("="*60)
+                paused = True
+                try:
+                    num_real = int(input("Enter number of REAL chips to spawn: "))
+                    num_fake = int(input("Enter number of FAKE chips to spawn: "))
+                    if num_real >= 0 and num_fake >= 0:
+                        self.spawn_test_batch(num_real, num_fake)
+                        print("\nPress P to resume and watch the test...")
+                    else:
+                        print("❌ Invalid numbers. Must be non-negative.")
+                        paused = False
+                except ValueError:
+                    print("❌ Invalid input. Please enter numbers.")
+                    paused = False
             elif key == ord('r') or key == ord('R'):
+                # Print test results if in test mode
+                if self.test_mode:
+                    self.print_test_results()
+                
+                # Reset everything
                 self.total_value = self.total_real = self.total_fake = 0
                 self.session_chips.clear()
+                self.test_mode = False
+                self.test_real_spawned = 0
+                self.test_fake_spawned = 0
+                self.test_real_detected = 0
+                self.test_fake_detected = 0
+                self.test_chips_spawned.clear()
                 print("🔄 Reset!")
         
         cv2.destroyAllWindows()
+        
+        # Print test results if in test mode
+        if self.test_mode:
+            self.print_test_results()
+        
         print(f"\n{'='*60}\nSESSION COMPLETE\n{'='*60}")
         print(f"Total Chips: {len(self.session_chips)} | Real: {self.total_real} | Fake: {self.total_fake}")
         print(f"Total Value: {self.total_value} CR")
