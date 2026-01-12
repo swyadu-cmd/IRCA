@@ -272,6 +272,9 @@ class CameraChipSystem:
         # Object tracking - store IDs of chips that have been counted
         self.tracked_objects = {}  # object_id -> detection info
         self.counted_ids = set()  # IDs that have been counted
+        self.object_areas = {}  # object_id -> list of recent areas
+        self.object_stable_count = {}  # object_id -> frames with stable size
+        self.min_stable_frames = 3  # Require 3 frames of stable size before counting
         
         print("\n✅ System ready!")
         print("="*60)
@@ -477,21 +480,51 @@ class CameraChipSystem:
                                 min_dist = dist
                                 closest_det = det
                         
-                        # Only count if this is a new object
-                        if closest_det and object_id not in self.counted_ids and min_dist < 50:
-                            self.tracked_objects[object_id] = closest_det
-                            self.counted_ids.add(object_id)
+                        if closest_det and min_dist < 50:
+                            # Track area history for this object
+                            if object_id not in self.object_areas:
+                                self.object_areas[object_id] = []
+                                self.object_stable_count[object_id] = 0
                             
-                            # Update statistics (only once per chip)
-                            if closest_det['is_fake']:
-                                self.fake_count += 1
-                                if debug:
-                                    print(f"  ✓ Counted new FAKE chip (ID: {object_id})")
+                            current_area = closest_det['area']
+                            self.object_areas[object_id].append(current_area)
+                            
+                            # Keep only last 5 area measurements
+                            if len(self.object_areas[object_id]) > 5:
+                                self.object_areas[object_id].pop(0)
+                            
+                            # Check if size is stable (within 10% variation)
+                            is_stable = False
+                            if len(self.object_areas[object_id]) >= 3:
+                                recent_areas = self.object_areas[object_id][-3:]
+                                avg_area = sum(recent_areas) / len(recent_areas)
+                                max_area = max(recent_areas)
+                                min_area = min(recent_areas)
+                                variation = (max_area - min_area) / avg_area if avg_area > 0 else 1.0
+                                is_stable = variation < 0.15  # Less than 15% variation
+                            
+                            # Increment stability counter if stable
+                            if is_stable:
+                                self.object_stable_count[object_id] += 1
                             else:
-                                self.real_count += 1
-                                self.total_value += closest_det['value']
-                                if debug:
-                                    print(f"  ✓ Counted new {closest_det['chip_type']} chip (ID: {object_id}, Value: {closest_det['value']} CR)")
+                                self.object_stable_count[object_id] = 0
+                            
+                            # Only count if object is stable and not counted yet
+                            if (object_id not in self.counted_ids and 
+                                self.object_stable_count[object_id] >= self.min_stable_frames):
+                                self.tracked_objects[object_id] = closest_det
+                                self.counted_ids.add(object_id)
+                                
+                                # Update statistics (only once per chip)
+                                if closest_det['is_fake']:
+                                    self.fake_count += 1
+                                    if debug:
+                                        print(f"  ✓ Counted new FAKE chip (ID: {object_id}, Area: {current_area:.0f})")
+                                else:
+                                    self.real_count += 1
+                                    self.total_value += closest_det['value']
+                                    if debug:
+                                        print(f"  ✓ Counted new {closest_det['chip_type']} chip (ID: {object_id}, Value: {closest_det['value']} CR, Area: {current_area:.0f})")
                 elif not self.tracker:
                     # Fallback without tracking (old behavior)
                     for det in detections:
@@ -528,6 +561,8 @@ class CameraChipSystem:
                 self.fake_count = 0
                 self.tracked_objects = {}
                 self.counted_ids = set()
+                self.object_areas = {}
+                self.object_stable_count = {}
                 if self.tracker:
                     self.tracker = CentroidTracker(max_disappeared=30, max_distance=50)
             elif key == ord(' '):
