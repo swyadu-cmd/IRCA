@@ -12,15 +12,28 @@ import os
 class ConveyorSimulator:
     """Simulates chips on a green conveyor belt"""
     
-    def __init__(self, width=1280, height=720, conveyor_speed=3):
-        """Initialize simulator"""
+    def __init__(self, width=1280, height=720, conveyor_speed=3, setup_mode=False):
+        """Initialize simulator
+        
+        Args:
+            width: Window width
+            height: Window height
+            conveyor_speed: Belt speed in pixels per frame
+            setup_mode: If True, run boundary and scan line setup before starting
+        """
         self.width = width
         self.height = height
         self.conveyor_speed = conveyor_speed
         
-        # Conveyor belt is 50% of screen width, centered
+        # Conveyor belt is 50% of screen width, centered (default values)
         self.belt_width = width // 2
         self.belt_x = (width - self.belt_width) // 2
+        
+        # Scan line position (default is middle)
+        self.scan_line_y = height // 2
+        
+        # Setup mode flag
+        self.setup_mode = setup_mode
         
         # Load chip templates
         self.chip_templates = self.load_chip_templates()
@@ -282,7 +295,7 @@ class ConveyorSimulator:
         for i, chip in enumerate(self.chips):
             chip['y'] += chip['velocity_y']
             
-            if chip['y'] > self.height // 2 and not chip['counted']:
+            if chip['y'] > self.scan_line_y and not chip['counted']:
                 chip['counted'] = True
                 if chip['authentic']:
                     self.total_real += 1
@@ -381,9 +394,8 @@ class ConveyorSimulator:
     def render_frame(self):
         """Render current frame"""
         frame = self.create_green_conveyor_background()
-        center_y = self.height // 2
-        cv2.line(frame, (self.belt_x, center_y), (self.belt_x + self.belt_width, center_y), (255, 255, 0), 3)
-        cv2.putText(frame, "SCAN LINE", (self.belt_x + 10, center_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+        cv2.line(frame, (self.belt_x, self.scan_line_y), (self.belt_x + self.belt_width, self.scan_line_y), (255, 255, 0), 3)
+        cv2.putText(frame, "SCAN LINE", (self.belt_x + 10, self.scan_line_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
         
         for chip in self.chips:
             x, y = int(chip['x']), int(chip['y'])
@@ -402,6 +414,220 @@ class ConveyorSimulator:
         
         self.draw_ui(frame)
         return frame
+    
+    def setup_boundary_and_scanline(self):
+        """Interactive setup for conveyor boundary and scan line"""
+        print("\n" + "="*60)
+        print("🔧 BOUNDARY & SCAN LINE SETUP")
+        print("="*60)
+        print("\nChoose setup method:")
+        print("  1 - Manual boundary setup (click to define)")
+        print("  2 - Auto-detect green conveyor belt")
+        print("  3 - Manual input (enter coordinates)")
+        print("  4 - Use defaults (50% width, centered)")
+        
+        choice = input("\nSelect option (1-4): ").strip()
+        
+        if choice == '1':
+            self.manual_boundary_click()
+        elif choice == '2':
+            self.auto_detect_boundary()
+        elif choice == '3':
+            self.manual_boundary_input()
+        elif choice == '4':
+            print("✅ Using default boundary settings")
+        else:
+            print("⚠️  Invalid choice, using defaults")
+        
+        # Setup scan line
+        self.setup_scan_line()
+        
+        print("\n✅ Setup complete!")
+        print(f"   Belt area: X={self.belt_x}, Width={self.belt_width}")
+        print(f"   Scan line: Y={self.scan_line_y}")
+        print("="*60 + "\n")
+    
+    def manual_boundary_click(self):
+        """Click-based boundary definition"""
+        print("\n📍 Click to define conveyor boundaries:")
+        print("   1. Click LEFT edge of belt")
+        print("   2. Click RIGHT edge of belt")
+        print("   Press ESC to cancel\n")
+        
+        # Create a sample frame
+        frame = self.create_green_conveyor_background()
+        cv2.putText(frame, "Click LEFT edge of conveyor belt", (50, 50),
+                   cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 2)
+        
+        clicks = []
+        
+        def mouse_callback(event, x, y, flags, param):
+            if event == cv2.EVENT_LBUTTONDOWN:
+                clicks.append(x)
+                cv2.circle(frame, (x, y), 5, (0, 0, 255), -1)
+                cv2.imshow("Setup - Click Boundary", frame)
+                
+                if len(clicks) == 1:
+                    cv2.putText(frame, "Click RIGHT edge of conveyor belt", (50, 50),
+                               cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 2)
+                    cv2.imshow("Setup - Click Boundary", frame)
+        
+        cv2.namedWindow("Setup - Click Boundary")
+        cv2.setMouseCallback("Setup - Click Boundary", mouse_callback)
+        cv2.imshow("Setup - Click Boundary", frame)
+        
+        while len(clicks) < 2:
+            key = cv2.waitKey(1) & 0xFF
+            if key == 27:  # ESC
+                print("   ⚠️  Cancelled, using defaults")
+                cv2.destroyWindow("Setup - Click Boundary")
+                return
+        
+        cv2.destroyWindow("Setup - Click Boundary")
+        
+        # Set boundary from clicks
+        left_x = min(clicks)
+        right_x = max(clicks)
+        self.belt_x = left_x
+        self.belt_width = right_x - left_x
+        
+        print(f"   ✅ Boundary set: X={self.belt_x}, Width={self.belt_width}")
+    
+    def auto_detect_boundary(self):
+        """Automatically detect green conveyor belt using color detection"""
+        print("\n🔍 Auto-detecting green conveyor belt...")
+        
+        # Create a sample frame
+        frame = self.create_green_conveyor_background()
+        
+        # Convert to HSV for green detection
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        
+        # Define green color range (wider range for variations)
+        lower_green = np.array([35, 30, 30])
+        upper_green = np.array([85, 255, 255])
+        
+        # Create mask for green regions
+        mask = cv2.inRange(hsv, lower_green, upper_green)
+        
+        # Find contours
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if contours:
+            # Find largest green contour (should be the belt)
+            largest_contour = max(contours, key=cv2.contourArea)
+            x, y, w, h = cv2.boundingRect(largest_contour)
+            
+            # Set belt boundaries
+            self.belt_x = x
+            self.belt_width = w
+            
+            print(f"   ✅ Detected belt: X={x}, Width={w}")
+            
+            # Show detection result
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 255), 3)
+            cv2.putText(frame, "Detected Conveyor Belt", (x, y-10),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+            cv2.imshow("Auto-Detection Result", frame)
+            cv2.waitKey(2000)
+            cv2.destroyWindow("Auto-Detection Result")
+        else:
+            print("   ⚠️  No green belt detected, using defaults")
+    
+    def manual_boundary_input(self):
+        """Manual input of boundary coordinates"""
+        print("\n⌨️  Manual boundary input:")
+        print(f"   Screen width: {self.width}px, height: {self.height}px")
+        
+        try:
+            belt_x = int(input("   Enter belt LEFT edge X coordinate: "))
+            belt_width = int(input("   Enter belt WIDTH: "))
+            
+            # Validate inputs
+            if 0 <= belt_x < self.width and belt_width > 0 and (belt_x + belt_width) <= self.width:
+                self.belt_x = belt_x
+                self.belt_width = belt_width
+                print(f"   ✅ Boundary set: X={belt_x}, Width={belt_width}")
+            else:
+                print("   ⚠️  Invalid values, using defaults")
+        except ValueError:
+            print("   ⚠️  Invalid input, using defaults")
+    
+    def setup_scan_line(self):
+        """Setup scan line position"""
+        print("\n📏 Scan Line Setup:")
+        print("  1 - Click to set position")
+        print("  2 - Manual input (Y coordinate)")
+        print("  3 - Use default (middle of screen)")
+        
+        choice = input("Select option (1-3): ").strip()
+        
+        if choice == '1':
+            self.scan_line_click()
+        elif choice == '2':
+            self.scan_line_input()
+        elif choice == '3':
+            print(f"   ✅ Using default: Y={self.scan_line_y}")
+        else:
+            print("   ⚠️  Invalid choice, using default")
+    
+    def scan_line_click(self):
+        """Click to set scan line position"""
+        print("\n📍 Click on the frame to set scan line position")
+        print("   Press ESC to cancel\n")
+        
+        frame = self.create_green_conveyor_background()
+        
+        # Draw current belt boundaries
+        cv2.line(frame, (self.belt_x, 0), (self.belt_x, self.height), (200, 200, 200), 3)
+        cv2.line(frame, (self.belt_x + self.belt_width, 0), 
+                (self.belt_x + self.belt_width, self.height), (200, 200, 200), 3)
+        
+        cv2.putText(frame, "Click to set SCAN LINE position", (50, 50),
+                   cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 2)
+        
+        scan_y = [self.scan_line_y]  # Use list to modify in callback
+        
+        def mouse_callback(event, x, y, flags, param):
+            if event == cv2.EVENT_LBUTTONDOWN:
+                scan_y[0] = y
+                # Redraw frame with new scan line
+                temp_frame = frame.copy()
+                cv2.line(temp_frame, (self.belt_x, y), 
+                        (self.belt_x + self.belt_width, y), (255, 255, 0), 3)
+                cv2.putText(temp_frame, f"Scan Line: Y={y}", (self.belt_x + 10, y - 10),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+                cv2.imshow("Setup - Scan Line", temp_frame)
+        
+        cv2.namedWindow("Setup - Scan Line")
+        cv2.setMouseCallback("Setup - Scan Line", mouse_callback)
+        
+        # Initial display
+        temp_frame = frame.copy()
+        cv2.line(temp_frame, (self.belt_x, self.scan_line_y), 
+                (self.belt_x + self.belt_width, self.scan_line_y), (255, 255, 0), 3)
+        cv2.imshow("Setup - Scan Line", temp_frame)
+        
+        print("   Click position, then press any key to confirm...")
+        cv2.waitKey(0)
+        cv2.destroyWindow("Setup - Scan Line")
+        
+        self.scan_line_y = scan_y[0]
+        print(f"   ✅ Scan line set: Y={self.scan_line_y}")
+    
+    def scan_line_input(self):
+        """Manual input of scan line Y coordinate"""
+        print(f"\n   Screen height: {self.height}px")
+        try:
+            scan_y = int(input("   Enter scan line Y coordinate: "))
+            
+            if 0 <= scan_y < self.height:
+                self.scan_line_y = scan_y
+                print(f"   ✅ Scan line set: Y={scan_y}")
+            else:
+                print("   ⚠️  Invalid value, using default")
+        except ValueError:
+            print("   ⚠️  Invalid input, using default")
     
     def spawn_test_batch(self, num_real, num_fake):
         """Spawn a specific number of real and fake chips for testing
@@ -475,6 +701,10 @@ class ConveyorSimulator:
     
     def run(self):
         """Main simulation loop"""
+        # Run setup if requested
+        if self.setup_mode:
+            self.setup_boundary_and_scanline()
+        
         print("\n🎬 Starting Intergalactic Riksbanken Chip Authenticator...")
         print("Controls: S-Spawn | B-Burst(5) | T-Test | C-Clear | P-Pause | R-Reset | Q-Quit\n")
         
@@ -553,6 +783,7 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description='Chip Authenticator')
     parser.add_argument('--camera', action='store_true', help='Use camera mode')
+    parser.add_argument('--setup', action='store_true', help='Run boundary and scan line setup')
     args = parser.parse_args()
     
     if args.camera:
@@ -570,4 +801,4 @@ if __name__ == "__main__":
         print("  BRONZE: 2 digits × ×   (e.g., 2×4 → 8 CR)")
         print("="*60 + "\n")
         
-        ConveyorSimulator(width=1280, height=720, conveyor_speed=3).run()
+        ConveyorSimulator(width=1280, height=720, conveyor_speed=3, setup_mode=args.setup).run()

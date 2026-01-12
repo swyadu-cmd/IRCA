@@ -14,6 +14,12 @@ python main.py
 ```
 Conveyor belt with automatic chip spawning
 
+**With Setup Mode:**
+```bash
+python main.py --setup
+```
+Interactive setup for conveyor boundary and scan line position
+
 ### 📸 Camera Mode (NEW!)
 ```bash
 python main.py --camera
@@ -45,7 +51,19 @@ Manual chip spawning and testing
 ### Simulator (`main.py`)
 - **S** - Spawn chip | **B** - Burst (5 chips)
 - **C** - Clear all | **P** - Pause/Resume
-- **R** - Reset stats | **Q** - Quit
+- **T** - Test Mode | **R** - Reset stats | **Q** - Quit
+
+### Setup Mode (`--setup` flag)
+**Boundary Setup Options:**
+1. **Manual Click** - Click left and right edges on screen
+2. **Auto-detect** - Automatically find green conveyor belt
+3. **Manual Input** - Enter X coordinate and width
+4. **Use Defaults** - 50% width, centered
+
+**Scan Line Setup:**
+1. **Click Position** - Click to set scan line Y position
+2. **Manual Input** - Enter Y coordinate
+3. **Use Default** - Middle of screen
 
 ### Camera (`main.py --camera`)
 - **Camera Selection** - Choose Webcam (1) or Basler (2)
