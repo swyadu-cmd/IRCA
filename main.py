@@ -64,6 +64,12 @@ class ConveyorSimulator:
         self.test_fake_detected = 0
         self.test_chips_spawned = []  # Track each spawned chip's ground truth
         
+        # Overlap test mode
+        self.overlap_test_mode = False
+        self.overlap_spawn_attempts = 0
+        self.overlap_detections = 0
+        self.overlap_missed = 0
+        
         print("🎬 Intergalactic Riksbanken Chip Authenticator initialized")
         print(f"   Resolution: {width}x{height}")
         print(f"   Belt width: {self.belt_width}px (50% of screen)")
@@ -314,6 +320,10 @@ class ConveyorSimulator:
                             else:
                                 self.test_fake_detected += 1
                             break
+                
+                # Update overlap test counts
+                if self.overlap_test_mode:
+                    self.overlap_detections += 1
             
             if chip['y'] > self.height + 50:
                 chips_to_remove.append(i)
@@ -414,6 +424,31 @@ class ConveyorSimulator:
         
         self.draw_ui(frame)
         return frame
+    
+    def check_overlap(self, x, y, width, height, min_spacing=20):
+        """Check if a new chip position overlaps with existing chips
+        
+        Args:
+            x, y: Top-left position of new chip
+            width, height: Dimensions of new chip
+            min_spacing: Minimum pixel spacing between chips
+            
+        Returns:
+            bool: True if overlaps, False if clear
+        """
+        for chip in self.chips:
+            # Calculate distance between centers
+            new_center_x = x + width // 2
+            new_center_y = y + height // 2
+            chip_center_x = chip['x'] + chip['width'] // 2
+            chip_center_y = chip['y'] + chip['height'] // 2
+            
+            # Check bounding box overlap with spacing
+            if (abs(new_center_x - chip_center_x) < (width + chip['width']) // 2 + min_spacing and
+                abs(new_center_y - chip_center_y) < (height + chip['height']) // 2 + min_spacing):
+                return True
+        
+        return False
     
     def setup_boundary_and_scanline(self):
         """Interactive setup for conveyor boundary and scan line"""
@@ -657,6 +692,106 @@ class ConveyorSimulator:
         print(f"✅ Test batch ready: {num_real} real, {num_fake} fake")
         print(f"   System will validate detection accuracy.")
     
+    def spawn_overlap_test(self, num_chips=5, allow_overlap=True):
+        """Spawn chips to test overlapping detection
+        
+        Args:
+            num_chips: Number of chips to spawn
+            allow_overlap: If False, ensure no overlaps; if True, force some overlaps
+        """
+        print(f"\n🔄 OVERLAP TEST: Spawning {num_chips} chips (overlap={'allowed' if allow_overlap else 'prevented'})...")
+        
+        self.overlap_test_mode = True
+        self.overlap_spawn_attempts = 0
+        self.overlap_detections = 0
+        self.overlap_missed = 0
+        
+        chips_spawned = 0
+        max_attempts = num_chips * 20  # Prevent infinite loops
+        
+        while chips_spawned < num_chips and self.overlap_spawn_attempts < max_attempts:
+            chip_type = random.choice(['GOLD', 'SILVER', 'BRONZE'])
+            if chip_type not in self.chip_templates:
+                continue
+            
+            template = self.chip_templates[chip_type].copy()
+            h, w = template.shape[:2]
+            
+            if allow_overlap:
+                # Force overlaps by spawning in same general area
+                if chips_spawned == 0:
+                    x = random.randint(self.belt_x + 50, self.belt_x + self.belt_width - w - 50)
+                    y_offset = -h - 10
+                else:
+                    # Spawn near previous chip
+                    prev_chip = self.chips[-1]
+                    x = prev_chip['x'] + random.randint(-w//2, w//2)
+                    x = max(self.belt_x + 10, min(x, self.belt_x + self.belt_width - w - 10))
+                    y_offset = prev_chip['y'] + random.randint(-h//2, h//2)
+                
+                self.spawn_chip_at_position(chip_type, x, y_offset)
+                chips_spawned += 1
+            else:
+                # Prevent overlaps
+                x = random.randint(self.belt_x + 10, self.belt_x + self.belt_width - w - 10)
+                y_offset = -h - 10 - (chips_spawned * (h + 30))  # Vertical spacing
+                
+                if not self.check_overlap(x, y_offset, w, h):
+                    self.spawn_chip_at_position(chip_type, x, y_offset)
+                    chips_spawned += 1
+            
+            self.overlap_spawn_attempts += 1
+        
+        print(f"✅ Overlap test ready: {chips_spawned} chips spawned in {self.overlap_spawn_attempts} attempts")
+        if allow_overlap:
+            print(f"   ⚠️  Chips may overlap - testing multi-detection capability")
+        else:
+            print(f"   ✓ Chips spaced apart - testing individual detection")
+    
+    def spawn_chip_at_position(self, chip_type, x, y):
+        """Spawn chip at specific position
+        
+        Args:
+            chip_type: 'GOLD', 'SILVER', or 'BRONZE'
+            x, y: Position coordinates
+        """
+        if chip_type not in self.chip_templates:
+            return
+        
+        template = self.chip_templates[chip_type].copy()
+        h, w = template.shape[:2]
+        
+        # Random authenticity
+        is_fake = random.random() < 0.2
+        authentic = not is_fake
+        
+        if is_fake:
+            value = 0
+        else:
+            if chip_type == 'GOLD':
+                digits = [random.randint(1, 9) for _ in range(3)]
+                value = (digits[0] * 100 + digits[1] * 10 + digits[2]) * 10
+            elif chip_type == 'SILVER':
+                digits = [random.randint(1, 9) for _ in range(3)]
+                value = digits[0] * 100 + digits[1] * 10 + digits[2]
+            else:
+                digits = [random.randint(1, 9) for _ in range(2)]
+                value = digits[0] * digits[1]
+        
+        chip = {
+            'id': self.next_chip_id, 'type': chip_type, 'x': x, 'y': y,
+            'width': w, 'height': h, 'template': template,
+            'value': value, 'authentic': authentic,
+            'velocity_y': self.conveyor_speed, 'counted': False,
+            'difference': 0.0
+        }
+        
+        self.chips.append(chip)
+        self.next_chip_id += 1
+        
+        status = 'FAKE' if is_fake else 'REAL'
+        print(f"✨ Spawned {chip_type} #{chip['id']} at ({x}, {y}) - {status}")
+    
     def print_test_results(self):
         """Print test mode results"""
         if not self.test_mode:
@@ -699,6 +834,36 @@ class ConveyorSimulator:
         
         print("="*60)
     
+    def print_overlap_test_results(self):
+        """Print overlap test results"""
+        if not self.overlap_test_mode:
+            return
+        
+        print("\n" + "="*60)
+        print("🔄 OVERLAP TEST RESULTS")
+        print("="*60)
+        
+        total_spawned = len([c for c in self.session_chips])
+        detected = self.overlap_detections
+        
+        print(f"\nChips Spawned: {self.overlap_spawn_attempts}")
+        print(f"Chips Detected: {detected}")
+        
+        if self.overlap_spawn_attempts > 0:
+            detection_rate = (detected / self.overlap_spawn_attempts) * 100
+            print(f"\nDetection Rate: {detection_rate:.1f}%")
+            
+            # Check for overlap issues
+            if detection_rate < 80:
+                print("\n⚠️  LOW DETECTION RATE - Possible overlap issues")
+                print("   Overlapping chips may be counted as single objects")
+            elif detection_rate >= 95:
+                print("\n✅ EXCELLENT - All chips detected correctly")
+            else:
+                print("\n✓ GOOD - Most chips detected")
+        
+        print("="*60)
+    
     def run(self):
         """Main simulation loop"""
         # Run setup if requested
@@ -736,15 +901,42 @@ class ConveyorSimulator:
                 print("\n" + "="*60)
                 print("🧪 TEST MODE")
                 print("="*60)
+                print("\nSelect test type:")
+                print("  1 - Standard test (controlled real/fake chips)")
+                print("  2 - Overlap test (with overlaps)")
+                print("  3 - Overlap test (no overlaps)")
+                
                 paused = True
+                test_choice = input("\nSelect test (1-3): ").strip()
+                
                 try:
-                    num_real = int(input("Enter number of REAL chips to spawn: "))
-                    num_fake = int(input("Enter number of FAKE chips to spawn: "))
-                    if num_real >= 0 and num_fake >= 0:
-                        self.spawn_test_batch(num_real, num_fake)
-                        print("\nPress P to resume and watch the test...")
+                    if test_choice == '1':
+                        num_real = int(input("Enter number of REAL chips to spawn: "))
+                        num_fake = int(input("Enter number of FAKE chips to spawn: "))
+                        if num_real >= 0 and num_fake >= 0:
+                            self.spawn_test_batch(num_real, num_fake)
+                            print("\nPress P to resume and watch the test...")
+                        else:
+                            print("❌ Invalid numbers. Must be non-negative.")
+                            paused = False
+                    elif test_choice == '2':
+                        num_chips = int(input("Enter number of chips to spawn: "))
+                        if num_chips > 0:
+                            self.spawn_overlap_test(num_chips, allow_overlap=True)
+                            print("\nPress P to resume and watch the test...")
+                        else:
+                            print("❌ Invalid number. Must be positive.")
+                            paused = False
+                    elif test_choice == '3':
+                        num_chips = int(input("Enter number of chips to spawn: "))
+                        if num_chips > 0:
+                            self.spawn_overlap_test(num_chips, allow_overlap=False)
+                            print("\nPress P to resume and watch the test...")
+                        else:
+                            print("❌ Invalid number. Must be positive.")
+                            paused = False
                     else:
-                        print("❌ Invalid numbers. Must be non-negative.")
+                        print("❌ Invalid choice.")
                         paused = False
                 except ValueError:
                     print("❌ Invalid input. Please enter numbers.")
@@ -753,6 +945,10 @@ class ConveyorSimulator:
                 # Print test results if in test mode
                 if self.test_mode:
                     self.print_test_results()
+                
+                # Print overlap test results
+                if self.overlap_test_mode:
+                    self.print_overlap_test_results()
                 
                 # Reset everything
                 self.total_value = self.total_real = self.total_fake = 0
@@ -763,6 +959,10 @@ class ConveyorSimulator:
                 self.test_real_detected = 0
                 self.test_fake_detected = 0
                 self.test_chips_spawned.clear()
+                self.overlap_test_mode = False
+                self.overlap_spawn_attempts = 0
+                self.overlap_detections = 0
+                self.overlap_missed = 0
                 print("🔄 Reset!")
         
         cv2.destroyAllWindows()
@@ -770,6 +970,10 @@ class ConveyorSimulator:
         # Print test results if in test mode
         if self.test_mode:
             self.print_test_results()
+        
+        # Print overlap test results
+        if self.overlap_test_mode:
+            self.print_overlap_test_results()
         
         print(f"\n{'='*60}\nSESSION COMPLETE\n{'='*60}")
         print(f"Total Chips: {len(self.session_chips)} | Real: {self.total_real} | Fake: {self.total_fake}")
