@@ -59,7 +59,7 @@ class ChipDetector:
         else:
             self.color_ranges = color_ranges
         
-        self.min_area = 2000
+        self.min_area = 500  # Lowered for smaller chips
         self.max_area = 50000
     
     def calibrate_chip_color(self, frame, chip_type):
@@ -100,12 +100,13 @@ class ChipDetector:
             'mean_hsv': mean_hsv
         }
         
-    def detect_chips(self, frame):
+    def detect_chips(self, frame, debug=False):
         """
         Detect chips in frame by color
         
         Args:
             frame: BGR image
+            debug: Print debug information
             
         Returns:
             detections: List of dicts with chip info
@@ -115,6 +116,7 @@ class ChipDetector:
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
         
         detections = []
+        total_contours = 0
         
         # Detect each chip type
         for chip_type, color_info in self.color_ranges.items():
@@ -128,9 +130,16 @@ class ChipDetector:
             
             # Find contours
             contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            total_contours += len(contours)
+            
+            if debug and len(contours) > 0:
+                print(f"  {chip_type}: Found {len(contours)} contours")
             
             for contour in contours:
                 area = cv2.contourArea(contour)
+                
+                if debug:
+                    print(f"    Contour area: {area:.0f} (min: {self.min_area}, max: {self.max_area})")
                 
                 # Filter by area
                 if area < self.min_area or area > self.max_area:
@@ -157,6 +166,9 @@ class ChipDetector:
                     'is_fake': is_fake,
                     'color': color_info['bgr_color']
                 })
+        
+        if debug and total_contours > 0:
+            print(f"Total contours found: {total_contours}, Detections: {len(detections)}")
         
         return detections
     
@@ -247,7 +259,7 @@ class CameraChipSystem:
         # Initialize tracker
         print("[4/4] Initializing tracking system...")
         if CAMERA_AVAILABLE:
-            self.tracker = CentroidTracker(maxDisappeared=30, maxDistance=50)
+            self.tracker = CentroidTracker(max_disappeared=30, max_distance=50)
         else:
             self.tracker = None
         
@@ -417,11 +429,13 @@ class CameraChipSystem:
     def run(self):
         """Main processing loop"""
         paused = False
+        frame_count = 0
         
         print("🎥 Starting camera feed...\n")
         
         while True:
             frame_start = time.time()
+            frame_count += 1
             
             # Capture frame
             if self.camera:
@@ -436,8 +450,11 @@ class CameraChipSystem:
                            cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
             
             if not paused and self.camera:
-                # Detect chips
-                detections = self.detector.detect_chips(frame)
+                # Detect chips (debug every 30 frames)
+                debug = (frame_count % 30 == 0)
+                if debug:
+                    print(f"\n=== Frame {frame_count} Debug ===")
+                detections = self.detector.detect_chips(frame, debug=debug)
                 
                 # Update statistics
                 for det in detections:
