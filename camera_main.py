@@ -269,6 +269,10 @@ class CameraChipSystem:
         self.fake_count = 0
         self.fps_queue = deque(maxlen=30)
         
+        # Object tracking - store IDs of chips that have been counted
+        self.tracked_objects = {}  # object_id -> detection info
+        self.counted_ids = set()  # IDs that have been counted
+        
         print("\n✅ System ready!")
         print("="*60)
         print("\nControls:")
@@ -456,13 +460,46 @@ class CameraChipSystem:
                     print(f"\n=== Frame {frame_count} Debug ===")
                 detections = self.detector.detect_chips(frame, debug=debug)
                 
-                # Update statistics
-                for det in detections:
-                    if det['is_fake']:
-                        self.fake_count += 1
-                    else:
-                        self.real_count += 1
-                        self.total_value += det['value']
+                # Update tracker with centroids
+                if self.tracker and detections:
+                    centroids = [det['centroid'] for det in detections]
+                    objects = self.tracker.update(centroids)
+                    
+                    # Match tracked objects with detections
+                    for (object_id, centroid) in objects.items():
+                        # Find closest detection to this tracked object
+                        min_dist = float('inf')
+                        closest_det = None
+                        for det in detections:
+                            dist = np.sqrt((centroid[0] - det['centroid'][0])**2 + 
+                                         (centroid[1] - det['centroid'][1])**2)
+                            if dist < min_dist:
+                                min_dist = dist
+                                closest_det = det
+                        
+                        # Only count if this is a new object
+                        if closest_det and object_id not in self.counted_ids and min_dist < 50:
+                            self.tracked_objects[object_id] = closest_det
+                            self.counted_ids.add(object_id)
+                            
+                            # Update statistics (only once per chip)
+                            if closest_det['is_fake']:
+                                self.fake_count += 1
+                                if debug:
+                                    print(f"  ✓ Counted new FAKE chip (ID: {object_id})")
+                            else:
+                                self.real_count += 1
+                                self.total_value += closest_det['value']
+                                if debug:
+                                    print(f"  ✓ Counted new {closest_det['chip_type']} chip (ID: {object_id}, Value: {closest_det['value']} CR)")
+                elif not self.tracker:
+                    # Fallback without tracking (old behavior)
+                    for det in detections:
+                        if det['is_fake']:
+                            self.fake_count += 1
+                        else:
+                            self.real_count += 1
+                            self.total_value += det['value']
                 
                 # Draw detections
                 frame = self.draw_detections(frame, detections)
@@ -489,6 +526,10 @@ class CameraChipSystem:
                 self.total_value = 0
                 self.real_count = 0
                 self.fake_count = 0
+                self.tracked_objects = {}
+                self.counted_ids = set()
+                if self.tracker:
+                    self.tracker = CentroidTracker(max_disappeared=30, max_distance=50)
             elif key == ord(' '):
                 paused = not paused
                 print(f"{'⏸️  Paused' if paused else '▶️  Resumed'}")
