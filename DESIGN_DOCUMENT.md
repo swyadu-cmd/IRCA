@@ -377,17 +377,35 @@ User          Launcher      Simulator/Camera    ChipDetector       OpenCV
 ```python
 width, height: int          # Screen dimensions
 conveyor_speed: int         # Belt movement speed
+belt_x: int                 # Belt left edge (configurable)
+belt_width: int             # Belt width (configurable)
+scan_line_y: int            # Scan line Y position (configurable)
+setup_mode: bool            # Enable interactive setup
 templates: dict             # Chip images (Gold/Silver/Bronze)
 chips: list                 # Active chip objects
 belt_offset: int            # Scrolling texture offset
 paused: bool                # Pause state
 spawn_timer: float          # Auto-spawn timing
+test_mode: bool             # Test validation mode
+test_real_spawned: int      # Test tracking variables
+test_fake_spawned: int
+test_real_detected: int
+test_fake_detected: int
 ```
 
 **Key Methods**:
+- `setup_boundary_and_scanline()`: Interactive configuration wizard
+- `manual_boundary_click()`: Click-based boundary setup
+- `auto_detect_boundary()`: HSV color-based green belt detection
+- `manual_boundary_input()`: Keyboard coordinate input
+- `setup_scan_line()`: Scan line position configuration
+- `scan_line_click()`: Click to set scan line
+- `scan_line_input()`: Manual Y coordinate input
 - `load_chip_templates()`: Load and preprocess PNG images
 - `create_green_conveyor_background()`: Generate belt texture
-- `spawn_chip()`: Create new chip with random attributes
+- `spawn_chip(force_authentic, chip_type_override)`: Create chip with control options
+- `spawn_test_batch(num_real, num_fake)`: Test mode chip spawning
+- `print_test_results()`: Display test validation results
 - `update_chips()`: Physics simulation (movement, cleanup)
 - `overlay_image_alpha()`: Alpha blending for transparency
 - `render_frame()`: Composite final display
@@ -566,26 +584,51 @@ blended = (alpha_3ch * foreground + (1 - alpha_3ch) * background).astype(uint8)
 **Purpose**: Algorithm testing and development without hardware
 
 **Features**:
+- **🔧 Interactive Setup Mode** (`--setup` flag):
+  - **Boundary Configuration**:
+    - Manual Click: Click left/right edges on screen
+    - Auto-detect: HSV color detection finds green belt
+    - Manual Input: Enter X coordinate and width
+    - Use Defaults: 50% width, centered
+  - **Scan Line Configuration**:
+    - Click Position: Click to set Y coordinate
+    - Manual Input: Enter Y value
+    - Use Default: Middle of screen
+  - **Auto-detection**: Adapts to lighting variations using HSV color space
+  
 - **Conveyor Belt Simulation**: 
-  - Width: 50% of screen (640px on 1280px)
-  - Centered horizontally
+  - Width: Configurable (default: 50% of screen, 640px on 1280px)
+  - Position: Configurable (default: centered horizontally)
   - Scrolling green texture (3 pixels/frame)
+  - Dynamic boundaries based on setup
   
 - **Chip Physics**:
-  - Spawn at random X position, Y = -chip_height
+  - Spawn at random X position within belt boundaries
+  - Y = -chip_height (top of screen)
   - Vertical movement: velocity_y = conveyor_speed
   - No horizontal drift (perpendicular to belt)
+  - Detection at configurable scan line position
   
 - **Auto-Spawning**:
   - Interval: 1.5 seconds
-  - Distribution: 80% real, 20% fake
+  - Distribution: Configurable (default: 70% real, 30% fake)
   - Random chip type selection
+  
+- **🧪 Test Mode** (Press T):
+  - Spawn controlled numbers of real/fake chips
+  - Track ground truth vs detected authenticity
+  - Calculate detection accuracy (real and fake separately)
+  - Display real-time validation metrics
+  - Pass/Fail verdict: ≥90% pass, 70-89% marginal, <70% fail
+  - Detailed results report on reset
 
 **Use Cases**:
-- Algorithm validation
+- Algorithm validation with controlled test scenarios
 - Performance benchmarking
+- Boundary and scan line calibration
 - UI/UX testing
 - Demo presentations
+- Accuracy validation and system verification
 
 ### 5.2 Camera Mode
 

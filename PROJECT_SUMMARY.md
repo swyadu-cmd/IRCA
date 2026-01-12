@@ -69,7 +69,9 @@ chip_system/                         # Main project directory
 ### 1. Simulator Mode (`python main.py`)
 - Conveyor belt with automatic chip spawning
 - 60 FPS real-time simulation
-- Perfect for algorithm testing
+- Interactive boundary and scan line setup (`--setup` flag)
+- Test mode with accuracy validation
+- Perfect for algorithm testing and system calibration
 
 ### 2. Camera Mode (`python camera_main.py`)
 - Interactive color calibration

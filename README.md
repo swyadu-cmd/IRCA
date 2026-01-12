@@ -26,6 +26,9 @@ python launcher.py
 **Option 1: Simulator Mode** (No Camera Required)
 ```bash
 python main.py
+
+# With boundary and scan line setup
+python main.py --setup
 ```
 
 **Option 2: Camera Mode** (Real-time Detection)
@@ -53,14 +56,19 @@ python game.py
 See [FEATURE_DETECTION_QUICKSTART.md](FEATURE_DETECTION_QUICKSTART.md) for details.
 
 ### Simulator Mode
-- **Green Conveyor Belt**: 50% screen width, centered with moving texture
+- **🔧 NEW: Interactive Setup Mode**: Configure conveyor boundary and scan line
+  - **Boundary Setup**: Manual click, auto-detect green belt, manual input, or defaults
+  - **Scan Line Setup**: Click position, manual input, or use default
+  - **Auto-detection**: HSV color space detection adapts to lighting variations
+- **Green Conveyor Belt**: Configurable width and position (default: 50% width, centered)
 - **Three Chip Types**:
   - **GOLD** (Yellow): Value = 3 digits × 10 (e.g., 752 → 7520 CR)
   - **SILVER** (Blue): Value = 3 digits (e.g., 756 → 756 CR)
   - **BRONZE** (Orange): Value = 2 digits × × (e.g., 2×4 → 8 CR)
-- **Real & Fake Detection**: 80% real chips, 20% fake chips (5% pixel threshold + feature detection)
+- **🧪 Test Mode**: Spawn controlled numbers of real/fake chips with accuracy validation
+- **Real & Fake Detection**: Configurable real/fake ratio (5% pixel threshold)
 - **Straight Line Movement**: Chips move perpendicular to belt motion
-- **Real-time Statistics**: Track total value, real/fake counts
+- **Real-time Statistics**: Track total value, real/fake counts, test accuracy
 
 ### Camera Mode
 ### Simulator Mode (`main.py`)
@@ -68,10 +76,15 @@ See [FEATURE_DETECTION_QUICKSTART.md](FEATURE_DETECTION_QUICKSTART.md) for detai
 |-----|--------|
 | S | Spawn single chip |
 | B | Burst spawn (5 chips) |
+| T | Test Mode (spawn controlled real/fake chips) |
 | C | Clear all chips |
 | P | Pause/Resume |
-| R | Reset statistics |
+| R | Reset statistics / Show test results |
 | Q | Quit |
+
+**Setup Mode** (`--setup` flag):
+- **Boundary Options**: Click edges, auto-detect, manual input, defaults
+- **Scan Line Options**: Click position, manual input, use default
 
 ### Camera Mode (`camera_main.py`)
 | Key | Action |
@@ -137,11 +150,13 @@ Fake chips have 0 value and are marked in red.
 ```python
 from main import ConveyorSimulator
 
-# Create simulator
+# Create simulator with default settings
 sim = ConveyorSimulator(width=1280, height=720, conveyor_speed=3)
-
-# Run
 sim.run()
+
+# Create simulator with setup mode
+sim = ConveyorSimulator(width=1280, height=720, conveyor_speed=3, setup_mode=True)
+sim.run()  # Will prompt for boundary and scan line setup
 ```
 
 ## Credits
